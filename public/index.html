@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Asteroid Impact Lab</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="" />
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <div class="layout">
+        <section class="map-panel">
+            <div class="map-toolbar">
+                <form id="location-form" class="map-search" autocomplete="off">
+                    <input type="search" id="location-query" name="query" placeholder="Search address, city, or landmark" />
+                    <button type="submit">Search</button>
+                </form>
+                <div class="map-meta location-card">
+                    <span id="center-coordinates" class="map-coordinate">No impact location selected</span>
+                    <span id="center-label" class="map-label muted">Left-click on the map to drop an impact pin.</span>
+                    <span id="center-environment" class="map-label muted">Surface context unavailable.</span>
+                </div>
+            </div>
+            <div id="map" role="application" aria-label="Impact target map"></div>
+            <div id="map-status" class="map-status">Loading satellite tiles...</div>
+        </section>
+        <section class="sidebar">
+            <header class="sidebar-header">
+                <h1>Asteroid Impact Lab</h1>
+                <p>Model an impact, explore multi-hazard footprints, and estimate casualties with live datasets.</p>
+            </header>
+
+            <section class="card">
+                <h2>Asteroid Presets</h2>
+                <div class="asteroid-picker">
+                    <button id="refresh-asteroids" type="button">Fetch Near-Earth Objects</button>
+                    <select id="asteroid-select">
+                        <option value="custom" selected>Custom asteroid</option>
+                    </select>
+                    <p class="asteroid-meta" id="asteroid-meta">Using manually configured parameters.</p>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Impact Parameters</h2>
+                <form id="config-form" class="config-form" autocomplete="off">
+                    <div class="grid">
+                        <label class="field">
+                            <span>Diameter</span>
+                            <div class="input">
+                                <input type="number" id="diameter" name="diameter" min="10" max="100000" step="any" value="150" />
+                                <span class="unit">meters</span>
+                            </div>
+                            <p class="size-comparison" id="size-comparison">Set the diameter to compare with familiar objects.</p>
+                        </label>
+                        <label class="field">
+                            <span>Velocity</span>
+                            <div class="input">
+                                <input type="number" id="velocity" name="velocity" min="1" max="150" step="any" value="22" />
+                                <span class="unit">km/s</span>
+                            </div>
+                        </label>
+                        <label class="field">
+                            <span>Impact angle</span>
+                            <div class="input">
+                                <input type="number" id="angle" name="angle" min="5" max="90" step="any" value="45" />
+                                <span class="unit">degrees</span>
+                            </div>
+                        </label>
+                        <label class="field">
+                            <span>Composition</span>
+                            <select id="density" name="density">
+                                <option value="3000" selected>Stony (3,000 kg/m3)</option>
+                                <option value="8000">Iron (8,000 kg/m3)</option>
+                                <option value="1500">Carbonaceous (1,500 kg/m3)</option>
+                                <option value="500">Cometary (500 kg/m3)</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Impact site</span>
+                            <select id="terrain" name="terrain">
+                                <option value="land" selected>Continental crust</option>
+                                <option value="water">Open ocean</option>
+                                <option value="ice">Polar ice</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Nearby population</span>
+                            <div class="input">
+                                <input type="number" id="population" name="population" min="0" step="any" value="0" />
+                                <span class="unit">people</span>
+                            </div>
+                        </label>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="primary">Run simulation</button>
+                        <button type="button" id="reset-form" class="secondary">Reset inputs</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="card" id="population-card">
+                <h2>Local Population</h2>
+                <p id="population-summary">Drop a pin to load nearby population estimates.</p>
+            </section>
+
+            <section class="card results-card">
+                <h2>Impact Summary</h2>
+                <p id="summary-text">Select a location and run the simulation to see projected effects.</p>
+                <div class="results-grid">
+                    <div>
+                        <h3>Crater & Thermal</h3>
+                        <ul>
+                            <li>Crater diameter: <strong id="crater-diameter">--</strong></li>
+                            <li>Crater depth: <strong id="crater-depth">--</strong></li>
+                            <li>Fireball radius: <strong id="fireball">--</strong></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3>Shock & Wind</h3>
+                        <ul>
+                            <li>Shockwave radius: <strong id="shockwave">--</strong></li>
+                            <li>Peak wind: <strong id="wind">--</strong></li>
+                            <li>Seismic magnitude: <strong id="richter">--</strong></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3>Casualties</h3>
+                        <ul>
+                            <li>Fireball fatalities: <strong id="fireball-fatalities">--</strong></li>
+                            <li>Blast fatalities: <strong id="blast-fatalities">--</strong></li>
+                            <li>Wind fatalities: <strong id="wind-fatalities">--</strong></li>
+                            <li>Seismic fatalities: <strong id="seismic-fatalities">--</strong></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3>Infrastructure</h3>
+                        <ul>
+                            <li>Severe damage radius: <strong id="severe-damage">--</strong></li>
+                            <li>Window shatter radius: <strong id="broken-windows">--</strong></li>
+                            <li>Estimated economic loss: <strong id="economic-loss">--</strong></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3>Tsunami</h3>
+                        <ul>
+                            <li>Source wave height: <strong id="tsunami-wave-source">--</strong></li>
+                            <li>Coastal wave height: <strong id="tsunami-wave-coast">--</strong></li>
+                            <li>Run-up height: <strong id="tsunami-runup">--</strong></li>
+                            <li>Arrival time: <strong id="tsunami-arrival">--</strong></li>
+                            <li>Inundation reach: <strong id="tsunami-reach">--</strong></li>
+                            <li>Tsunami casualties: <strong id="tsunami-fatalities">--</strong></li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </section>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
+
+
+
