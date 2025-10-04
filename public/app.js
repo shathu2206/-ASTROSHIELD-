@@ -28,6 +28,11 @@ const asteroidCompositionSelect = document.getElementById("asteroid-composition"
 const asteroidHazardCheckbox = document.getElementById("asteroid-hazard");
 const asteroidLoadMoreBtn = document.getElementById("asteroid-load-more");
 const asteroidResetBtn = document.getElementById("asteroid-reset");
+const neoStartDateInput = document.getElementById("neo-start-date");
+const neoEndDateInput = document.getElementById("neo-end-date");
+const neoLoadButton = document.getElementById("neo-load");
+const neoStatusEl = document.getElementById("neo-status");
+const neoTableBody = document.getElementById("neo-table-body");
 const resultsCard = document.querySelector(".results-card");
 const locationForm = document.getElementById("location-form");
 const locationInput = document.getElementById("location-query");
@@ -64,6 +69,7 @@ const DEFAULT_ASTEROID_META =
     asteroidMeta?.textContent ?? "Search NASA's Near-Earth Object catalog to auto-fill impact parameters.";
 const DEFAULT_MAP_VIEW = { center: [20, 0], zoom: 3 };
 const DAY_IN_MS = 86_400_000;
+const NEO_FEED_MAX_RANGE_DAYS = 7;
 
 const RESULT_FIELDS = [
     craterDiameterEl,
@@ -129,6 +135,306 @@ const SIZE_REFERENCES = [
     { size: 8849, label: "Mount Everest (8,849 m tall)" },
     { size: 77000, label: "the width of Rhode Island (~77 km)" }
 ];
+
+function formatDateInputValue(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return "";
+    }
+    return date.toISOString().slice(0, 10);
+}
+
+function toFiniteNumber(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
+function formatNeoDate(value) {
+    if (!value) return "--";
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return value;
+    }
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toISOString().slice(0, 10);
+    }
+    return String(value);
+}
+
+function formatNeoApproach(value) {
+    if (!value) return "--";
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+        const iso = parsed.toISOString();
+        return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+    }
+    return String(value);
+}
+
+function formatNeoMagnitude(value) {
+    const numeric = toFiniteNumber(value);
+    return numeric == null ? "--" : numeric.toFixed(1);
+}
+
+function formatNeoVelocity(value) {
+    const numeric = toFiniteNumber(value);
+    return numeric == null
+        ? "--"
+        : `${numeric.toLocaleString(undefined, { maximumFractionDigits: 2 })} km/s`;
+}
+
+function formatNeoDistance(value) {
+    const numeric = toFiniteNumber(value);
+    return numeric == null
+        ? "--"
+        : `${numeric.toLocaleString(undefined, { maximumFractionDigits: 0 })} km`;
+}
+
+const NEO_STATUS_VARIANTS = ["info", "success", "warning", "error"];
+
+function setNeoStatus(message, variant = "info") {
+    if (!neoStatusEl) return;
+    const normalizedMessage = message ?? "";
+    neoStatusEl.textContent = normalizedMessage;
+    neoStatusEl.classList.remove("muted", ...NEO_STATUS_VARIANTS.map((value) => `neo-status-${value}`));
+    if (!normalizedMessage) {
+        neoStatusEl.classList.add("muted");
+        return;
+    }
+    const variantClass = NEO_STATUS_VARIANTS.includes(variant) ? `neo-status-${variant}` : "neo-status-info";
+    neoStatusEl.classList.add(variantClass);
+    if (variant === "info") {
+        neoStatusEl.classList.add("muted");
+    }
+}
+
+function enforceNeoDateBounds() {
+    if (!neoStartDateInput || !neoEndDateInput) return;
+    if (neoStartDateInput.value) {
+        neoEndDateInput.min = neoStartDateInput.value;
+        const startDate = new Date(`${neoStartDateInput.value}T00:00:00Z`);
+        const maxDate = new Date(startDate.getTime() + (NEO_FEED_MAX_RANGE_DAYS - 1) * DAY_IN_MS);
+        const maxValue = formatDateInputValue(maxDate);
+        if (maxValue) {
+            neoEndDateInput.max = maxValue;
+            if (neoEndDateInput.value && neoEndDateInput.value > maxValue) {
+                neoEndDateInput.value = maxValue;
+            }
+        }
+    } else {
+        neoEndDateInput.removeAttribute("min");
+        neoEndDateInput.removeAttribute("max");
+    }
+}
+
+function renderNeoTable(records) {
+    if (!neoTableBody) return;
+    neoTableBody.innerHTML = "";
+    const entries = Array.isArray(records) ? records : [];
+    if (entries.length === 0) {
+        const row = document.createElement("tr");
+        row.className = "empty";
+        const cell = document.createElement("td");
+        cell.colSpan = 8;
+        cell.textContent = "No near-Earth objects found for the selected range.";
+        row.appendChild(cell);
+        neoTableBody.appendChild(row);
+        return;
+    }
+
+    for (const entry of entries) {
+        const row = document.createElement("tr");
+
+        const dateCell = document.createElement("td");
+        dateCell.textContent = formatNeoDate(entry?.date);
+        row.appendChild(dateCell);
+
+        const nameCell = document.createElement("td");
+        if (entry?.nasaJplUrl) {
+            const link = document.createElement("a");
+            link.href = entry.nasaJplUrl;
+            link.textContent = entry?.name ?? "Unknown object";
+            link.target = "_blank";
+            link.rel = "noopener";
+            nameCell.appendChild(link);
+        } else {
+            nameCell.textContent = entry?.name ?? "Unknown object";
+        }
+        row.appendChild(nameCell);
+
+        const idCell = document.createElement("td");
+        idCell.textContent = entry?.id ?? "--";
+        row.appendChild(idCell);
+
+        const hazardCell = document.createElement("td");
+        const hazardBadge = document.createElement("span");
+        hazardBadge.className = `neo-badge ${entry?.hazardous ? "neo-badge-risk" : "neo-badge-safe"}`;
+        hazardBadge.textContent = entry?.hazardous ? "Yes" : "No";
+        hazardCell.appendChild(hazardBadge);
+        row.appendChild(hazardCell);
+
+        const magnitudeCell = document.createElement("td");
+        magnitudeCell.textContent = formatNeoMagnitude(entry?.absoluteMagnitude);
+        row.appendChild(magnitudeCell);
+
+        const approachCell = document.createElement("td");
+        approachCell.textContent = formatNeoApproach(entry?.closeApproachDate);
+        row.appendChild(approachCell);
+
+        const velocityCell = document.createElement("td");
+        velocityCell.textContent = formatNeoVelocity(entry?.relativeVelocityKps);
+        row.appendChild(velocityCell);
+
+        const missCell = document.createElement("td");
+        missCell.textContent = formatNeoDistance(entry?.missDistanceKm);
+        row.appendChild(missCell);
+
+        neoTableBody.appendChild(row);
+    }
+}
+
+async function fetchNeoJson(url) {
+    const response = await fetch(url);
+    const text = await response.text();
+    let payload = null;
+    try {
+        payload = text ? JSON.parse(text) : {};
+    } catch {
+        payload = text;
+    }
+
+    if (!response.ok) {
+        const message =
+            (payload && typeof payload === "object" && (payload.error || payload.message || payload.details)) ||
+            (typeof payload === "string" && payload) ||
+            `Request failed with status ${response.status}`;
+        throw new Error(message);
+    }
+
+    return payload && typeof payload === "object" ? payload : {};
+}
+
+async function loadNeoFeedRange(start, end) {
+    const params = new URLSearchParams({ start });
+    if (end) {
+        params.set("end", end);
+    }
+    return fetchNeoJson(`/api/neo-feed?${params.toString()}`);
+}
+
+async function loadNeoFallback() {
+    return fetchNeoJson("/api/neo-fallback");
+}
+
+async function handleNeoLoadClick() {
+    if (!neoStartDateInput || !neoEndDateInput || !neoLoadButton) return;
+
+    const startValue = neoStartDateInput.value;
+    const endValue = neoEndDateInput.value || startValue;
+
+    if (!startValue) {
+        setNeoStatus("Choose a valid start date before loading asteroids.", "error");
+        neoStartDateInput.focus();
+        return;
+    }
+
+    const startDate = new Date(`${startValue}T00:00:00Z`);
+    const endDate = new Date(`${endValue}T00:00:00Z`);
+
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        setNeoStatus("Enter valid calendar dates in YYYY-MM-DD format.", "error");
+        return;
+    }
+
+    if (endDate < startDate) {
+        setNeoStatus("End date cannot be earlier than the start date.", "error");
+        neoEndDateInput.focus();
+        return;
+    }
+
+    if (endDate.getTime() - startDate.getTime() > (NEO_FEED_MAX_RANGE_DAYS - 1) * DAY_IN_MS) {
+        setNeoStatus("Limit the range to seven days or fewer.", "error");
+        neoEndDateInput.focus();
+        return;
+    }
+
+    setNeoStatus("Loading near-Earth objects from NASA...", "info");
+    neoLoadButton.disabled = true;
+    neoLoadButton.setAttribute("aria-busy", "true");
+
+    try {
+        const payload = await loadNeoFeedRange(startValue, endValue);
+        const asteroids = Array.isArray(payload?.asteroids) ? payload.asteroids : [];
+        renderNeoTable(asteroids);
+
+        if (asteroids.length === 0) {
+            setNeoStatus("No near-Earth objects reported for that range.", "info");
+        } else {
+            const endLabel = endValue || startValue;
+            setNeoStatus(
+                `Loaded ${asteroids.length.toLocaleString()} object${asteroids.length === 1 ? "" : "s"} from NASA (${startValue} → ${endLabel}).`,
+                "success"
+            );
+        }
+    } catch (error) {
+        console.warn("NASA feed failed, loading fallback data", error);
+        try {
+            const fallback = await loadNeoFallback();
+            const fallbackAsteroids = Array.isArray(fallback?.asteroids) ? fallback.asteroids : [];
+            renderNeoTable(fallbackAsteroids);
+            if (fallbackAsteroids.length === 0) {
+                setNeoStatus("NASA feed unavailable and no offline asteroids were found.", "warning");
+            } else {
+                setNeoStatus(
+                    `NASA feed unavailable; showing ${fallbackAsteroids.length.toLocaleString()} offline sample object${
+                        fallbackAsteroids.length === 1 ? "" : "s"
+                    }`,
+                    "warning"
+                );
+            }
+        } catch (fallbackError) {
+            console.error("Fallback asteroid load failed", fallbackError);
+            renderNeoTable([]);
+            setNeoStatus("Unable to load asteroid data. Please try again later.", "error");
+        }
+    } finally {
+        neoLoadButton.disabled = false;
+        neoLoadButton.removeAttribute("aria-busy");
+    }
+}
+
+function initializeNeoFeedControls() {
+    if (!neoStartDateInput || !neoEndDateInput || !neoLoadButton) return;
+
+    if (!neoStartDateInput.value) {
+        const today = new Date();
+        neoStartDateInput.value = formatDateInputValue(today);
+    }
+
+    if (!neoEndDateInput.value) {
+        const today = neoStartDateInput.value
+            ? new Date(`${neoStartDateInput.value}T00:00:00Z`)
+            : new Date();
+        const endDate = new Date(today.getTime() + 2 * DAY_IN_MS);
+        neoEndDateInput.value = formatDateInputValue(endDate);
+    }
+
+    enforceNeoDateBounds();
+
+    neoStartDateInput.addEventListener("change", () => {
+        if (neoEndDateInput && (!neoEndDateInput.value || neoEndDateInput.value < neoStartDateInput.value)) {
+            neoEndDateInput.value = neoStartDateInput.value;
+        }
+        enforceNeoDateBounds();
+    });
+
+    neoEndDateInput.addEventListener("change", () => {
+        enforceNeoDateBounds();
+    });
+
+    neoLoadButton.addEventListener("click", () => {
+        handleNeoLoadClick();
+    });
+}
 
 let latestGeology = null;
 let map = null;
@@ -1560,6 +1866,7 @@ if (locationForm) {
     });
 }
 
+initializeNeoFeedControls();
 initMap();
 initializeAsteroidCatalog();
 updateSizeComparison();

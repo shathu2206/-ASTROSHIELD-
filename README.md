@@ -5,7 +5,7 @@ Interactive asteroid impact sandbox with live satellite map targeting, asteroid 
 ## Prerequisites
 
 - Node.js 18 or newer (includes `npm` and native `fetch`).
-- Optional: A NASA API key (https://api.nasa.gov/).
+- NASA API key (https://api.nasa.gov/) for higher rate limits.
 
 ## Setup
 
@@ -13,7 +13,7 @@ Interactive asteroid impact sandbox with live satellite map targeting, asteroid 
    ```bash
    npm install
    ```
-2. Create a `.env` file (optional) to add your NASA key:
+2. Create a `.env` file with your NASA API key (recommended to avoid the demo rate limit):
    ```bash
    echo NASA_API_KEY=YOUR_NASA_KEY_HERE > .env
    ```
@@ -25,7 +25,21 @@ Interactive asteroid impact sandbox with live satellite map targeting, asteroid 
 npm start
 ```
 
-This launches an Express server on http://localhost:3000. The server serves the UI from `public/` and exposes API endpoints for simulation, population lookup, geocoding, and NASA NEO presets.
+This launches an Express server on http://localhost:3000. The server serves the UI from `public/` and exposes API endpoints for simulation, population lookup, geocoding, and NASA NEO datasets. The NASA requests are proxied through the server so your API key stays on the backend.
+
+### Environment variables
+
+- `NASA_API_KEY` – personal key from https://api.nasa.gov/. If omitted the app uses NASA's shared `DEMO_KEY`, which is heavily rate limited. When NASA returns an error (for example due to rate limits) the UI automatically falls back to the bundled offline dataset in `data/asteroids-fallback.json`.
+
+### NASA NeoWs proxy endpoints
+
+The Express server provides a small proxy for the [NASA NeoWs API](https://api.nasa.gov/):
+
+- `GET /api/neo-feed?start=YYYY-MM-DD&end=YYYY-MM-DD` – fetches the NASA feed for a 7-day window.
+- `GET /api/neo-lookup/:id` – looks up a specific NEO by its NASA identifier.
+- `GET /api/neo-fallback` – returns the offline sample data bundled with the project.
+
+Frontend requests should use these routes instead of calling NASA directly; they keep the API key server-side and provide consistent error handling.
 
 ## Features
 - Leaflet satellite map (Esri World Imagery) with on-map search, left-click pin placement, and hazard footprint overlays.

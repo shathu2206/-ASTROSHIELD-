@@ -286,6 +286,108 @@ body {
     font-size: 1.26rem;
 }
 
+#neo-feed .neo-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.9rem;
+}
+
+#neo-feed .neo-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.neo-status {
+    font-size: 0.9rem;
+    color: var(--muted);
+    min-height: 1.2em;
+}
+
+.neo-status-info {
+    color: var(--muted);
+}
+
+.neo-status-success {
+    color: #9ff3b4;
+}
+
+.neo-status-warning {
+    color: #ffdf91;
+}
+
+.neo-status-error {
+    color: #ff9ba7;
+}
+
+.neo-table-wrapper {
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(12, 15, 28, 0.6);
+    overflow-x: auto;
+}
+
+.neo-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 640px;
+}
+
+.neo-table thead {
+    background: rgba(255, 255, 255, 0.06);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.75rem;
+}
+
+.neo-table th,
+.neo-table td {
+    padding: 0.65rem 0.85rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.neo-table tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.neo-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.neo-table td a {
+    color: #c9d6ff;
+    text-decoration: none;
+}
+
+.neo-table td a:hover,
+.neo-table td a:focus {
+    text-decoration: underline;
+}
+
+.neo-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.neo-badge-risk {
+    background: rgba(255, 138, 71, 0.22);
+    color: #ffd5b8;
+}
+
+.neo-badge-safe {
+    background: rgba(111, 207, 151, 0.18);
+    color: #b5f7cf;
+}
+
 .primary {
     padding: 0.85rem;
     border-radius: 12px;

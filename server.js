@@ -120,6 +120,24 @@ const FALLBACK_ASTEROID_RECORDS = Array.isArray(fallbackAsteroids)
     ? fallbackAsteroids.map((item) => buildFallbackAsteroidRecord(item))
     : [];
 
+function mapRecordToFeedEntry(record, fallbackDate = null) {
+    const approachDateIso = record?.approachDateIso ?? fallbackDate ?? null;
+    const approachDate = record?.approachDate ?? approachDateIso ?? null;
+    return {
+        id: record?.id ?? null,
+        name: record?.name ?? "Unknown object",
+        hazardous: Boolean(record?.hazardous),
+        absoluteMagnitude: record?.absoluteMagnitude ?? null,
+        closeApproachDate: approachDate,
+        relativeVelocityKps: record?.approachRelativeVelocity ?? record?.velocity ?? null,
+        missDistanceKm: record?.approachMissDistanceKm ?? null,
+        approachBody: record?.approachBody ?? null,
+        nasaJplUrl: record?.nasaJplUrl ?? null,
+        source: record?.source ?? null,
+        date: approachDateIso ?? approachDate
+    };
+}
+
 function estimateComposition(neo, diameterMeters) {
     const name = String(neo?.name ?? "").toLowerCase();
     if (/^(c|p)\//.test(name) || /comet/.test(name)) {
@@ -180,6 +198,8 @@ function buildAsteroidRecord(neo) {
     );
 
     const approachVelocity = toNumber(approach?.relative_velocity?.kilometers_per_second);
+    const missDistanceKm = toNumber(approach?.miss_distance?.kilometers);
+    const missDistanceLunar = toNumber(approach?.miss_distance?.lunar);
     const composition = estimateComposition(neo, avgDiameter);
 
     const density = COMPOSITION_DENSITY[composition] ?? COMPOSITION_DENSITY.unknown;
@@ -205,6 +225,9 @@ function buildAsteroidRecord(neo) {
         approachDate: approachDateFull ?? approachDateIso ?? null,
         approachDateIso,
         approachBody: approach?.orbiting_body ?? null,
+        approachRelativeVelocity: approachVelocity,
+        approachMissDistanceKm: missDistanceKm,
+        approachMissDistanceLunar: missDistanceLunar,
         orbitClass: neo?.orbital_data?.orbit_class?.orbit_class_type ?? null,
         nasaJplUrl: neo?.nasa_jpl_url ?? null,
         source: "nasa"
@@ -233,6 +256,9 @@ function buildFallbackAsteroidRecord(asteroid) {
         diameterMin: diameter,
         diameterMax: diameter,
         velocity,
+        approachRelativeVelocity: velocity,
+        approachMissDistanceKm: null,
+        approachMissDistanceLunar: null,
         impactAngle: clamp(Number(asteroid.impactAngle) || 45, 5, 90),
         density,
         absoluteMagnitude: toNumber(asteroid.absoluteMagnitude),
@@ -991,6 +1017,86 @@ function buildSummary(parameters, impact, location, populationInfo, tsunami) {
 
     return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleDeg.toFixed(0)}� and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
 }
+
+app.get("/api/neo-feed", async (req, res) => {
+    const { start, end } = req.query;
+    const { startString, endString } = resolveDateRange({ startDate: start, endDate: end });
+
+    if (!startString) {
+        res.status(400).json({ error: "A valid start date (YYYY-MM-DD) is required." });
+        return;
+    }
+
+    try {
+        const params = new URLSearchParams({ start_date: startString, api_key: NASA_API_KEY });
+        if (endString && endString !== startString) {
+            params.set("end_date", endString);
+        }
+
+        const url = `https://api.nasa.gov/neo/rest/v1/feed?${params.toString()}`;
+        const feed = await fetchJson(url, { timeoutMs: 15000 });
+        const nearEarthObjects = feed?.near_earth_objects ?? {};
+        const records = [];
+
+        const sortedDates = Object.keys(nearEarthObjects).sort();
+        for (const dateKey of sortedDates) {
+            const items = Array.isArray(nearEarthObjects[dateKey]) ? nearEarthObjects[dateKey] : [];
+            for (const neo of items) {
+                const record = buildAsteroidRecord(neo);
+                records.push(mapRecordToFeedEntry(record, dateKey));
+            }
+        }
+
+        res.json({
+            source: "nasa",
+            startDate: startString,
+            endDate: endString ?? startString,
+            count: records.length,
+            asteroids: records
+        });
+    } catch (error) {
+        console.error(`NASA NeoWs feed request failed for ${startString} to ${endString ?? startString}:`, error);
+        res.status(502).json({
+            error: "Failed to load NASA Near-Earth Object feed.",
+            details: error.message
+        });
+    }
+});
+
+app.get("/api/neo-lookup/:id", async (req, res) => {
+    const id = String(req.params.id ?? "").trim();
+    if (!id) {
+        res.status(400).json({ error: "Missing asteroid identifier." });
+        return;
+    }
+
+    try {
+        const url = `https://api.nasa.gov/neo/rest/v1/neo/${encodeURIComponent(id)}?api_key=${NASA_API_KEY}`;
+        const asteroid = await fetchJson(url, { timeoutMs: 15000 });
+        const record = buildAsteroidRecord(asteroid);
+        res.json({ source: "nasa", asteroid: record });
+    } catch (error) {
+        console.error(`NASA NeoWs lookup failed for ${id}:`, error);
+        const statusMatch = /Request failed \((\d{3})\)/.exec(error?.message ?? "");
+        const statusCode = statusMatch ? Number(statusMatch[1]) : 502;
+        const safeStatus = statusCode >= 400 && statusCode < 600 ? statusCode : 502;
+        res.status(safeStatus).json({
+            error: "Failed to lookup asteroid.",
+            details: error.message
+        });
+    }
+});
+
+app.get("/api/neo-fallback", (_req, res) => {
+    const asteroids = FALLBACK_ASTEROID_RECORDS.map((record) => mapRecordToFeedEntry(record));
+    res.json({
+        source: "fallback",
+        startDate: null,
+        endDate: null,
+        count: asteroids.length,
+        asteroids
+    });
+});
 
 app.get("/api/geocode", async (req, res) => {
     const query = req.query.query?.trim();
