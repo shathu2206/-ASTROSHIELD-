@@ -537,6 +537,46 @@ body {
     color: var(--muted);
 }
 
+.results-dropdown {
+    display: block;
+    padding: 0.3rem 0.65rem;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.results-dropdown summary {
+    cursor: pointer;
+    margin: 0;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    list-style: none;
+}
+
+.results-dropdown summary::-webkit-details-marker {
+    display: none;
+}
+
+.results-dropdown summary::after {
+    content: '\25BC';
+    margin-left: auto;
+    font-size: 0.85rem;
+    transition: transform 0.2s ease;
+}
+
+.results-dropdown[open] summary::after {
+    transform: rotate(180deg);
+}
+
+.results-dropdown > ul {
+    margin-top: 0.6rem;
+}
+
 .results-grid {
     display: grid;
     gap: 1.3rem;
