@@ -1,7 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
-import fallbackAsteroids from "./data/asteroids-fallback.json" with { type: "json" };
+
 dotenv.config();
 
 const app = express();
@@ -28,19 +28,39 @@ const CASUALTY_FATALITY_FACTORS = {
 const ECONOMIC_LOSS_PER_FATALITY = 4_200_000;
 
 async function fetchJson(url, options = {}) {
-    const response = await fetch(url, {
-        headers: {
-            "User-Agent": DEFAULT_USER_AGENT,
-            Accept: "application/json",
-            ...(options.headers || {})
-        },
-        ...options
-    });
-    if (!response.ok) {
-        const message = await response.text();
-        throw new Error(`Request failed (${response.status}): ${message}`);
+    const { headers = {}, timeoutMs = 10_000, signal, ...rest } = options;
+    const controller = new AbortController();
+    const extraSignals = [];
+    if (signal) {
+        extraSignals.push(signal);
     }
-    return response.json();
+    const combinedSignal = extraSignals.length
+        ? AbortSignal.any([controller.signal, ...extraSignals])
+        : controller.signal;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, {
+            headers: {
+                "User-Agent": DEFAULT_USER_AGENT,
+                Accept: "application/json",
+                ...headers
+            },
+            signal: combinedSignal,
+            ...rest
+        });
+        if (!response.ok) {
+            const message = await response.text();
+            throw new Error(`Request failed (${response.status}): ${message}`);
+        }
+        return response.json();
+    } catch (error) {
+        if (error?.name === "AbortError") {
+            throw new Error(`Request timed out after ${timeoutMs} ms`);
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeout);
+    }
 }
 
 
@@ -203,13 +223,35 @@ async function resolveOceanContext(lat, lng) {
     return context;
 }
 
+function buildFallbackReverse(lat, lng, error) {
+    const latHemisphere = lat >= 0 ? "N" : "S";
+    const lngHemisphere = lng >= 0 ? "E" : "W";
+    const coordinateLabel = `${Math.abs(lat).toFixed(2)}°${latHemisphere}, ${Math.abs(lng).toFixed(2)}°${lngHemisphere}`;
+    return {
+        city: null,
+        locality: null,
+        principalSubdivision: null,
+        countryName: "Unknown location",
+        continent: null,
+        localityInfo: { natural: [], informative: [] },
+        timezone: null,
+        description: coordinateLabel,
+        fallback: true,
+        fallbackReason: error || "Geocoding service unavailable"
+    };
+}
+
 async function resolveGeology(lat, lng) {
     const reverseUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`;
-    let reverse = null;
+    let reverse = buildFallbackReverse(lat, lng);
     try {
-        reverse = await fetchJson(reverseUrl);
+        const result = await fetchJson(reverseUrl, { timeoutMs: 6000 });
+        if (result && typeof result === "object") {
+            reverse = { ...reverse, ...result, fallback: false };
+            delete reverse.fallbackReason;
+        }
     } catch (error) {
-        throw new Error("Reverse geocoding failed");
+        reverse = buildFallbackReverse(lat, lng, error.message);
     }
 
     let elevation = null;
@@ -240,7 +282,7 @@ async function resolveGeology(lat, lng) {
     }
 
     const labels = [reverse.city, reverse.locality, reverse.principalSubdivision, reverse.countryName].filter(Boolean);
-    const label = labels[0] || "Selected location";
+    const label = labels[0] || reverse.description || "Selected location";
     const natural = reverse?.localityInfo?.natural ?? [];
     const informative = reverse?.localityInfo?.informative ?? [];
     const highlights = informative.slice(0, 3).map((item) => item?.description || item?.name).filter(Boolean);
@@ -255,28 +297,20 @@ async function resolveGeology(lat, lng) {
         ocean = null;
     }
 
-    return {
+    const geology = {
         label,
-        country: reverse.countryName,
-        region: reverse.principalSubdivision,
-        continent: reverse.continent,
+        country: reverse.countryName || "Unknown location",
+        region: reverse.principalSubdivision || null,
+        continent: reverse.continent || null,
         elevationMeters: elevation,
         surfaceType: inferSurfaceType({ reverse, elevation, landcover: landcoverLabel, lat }),
         landcover: landcoverLabel,
         naturalFeature: natural[0]?.name || null,
         waterBody: reverse.isOcean ? reverse.ocean || "Open ocean" : reverse.isLake ? reverse.lake || "Lake" : null,
-        timezone: reverse.timezone,
+        timezone: reverse.timezone || null,
         highlights: highlights.filter(Boolean),
         ocean
     };
-    if (reverse.fallback) {
-        geology.fallback = {
-            reason: reverse.fallbackReason,
-            description: reverse.description
-        };
-    }
-
-    return geology;
 }
 
 function computeImpact({ diameter, velocity, angleDeg, density, terrainKey }) {
@@ -570,7 +604,7 @@ function buildSummary(parameters, impact, location, populationInfo, tsunami) {
         ? ` Tsunami modelling projects coastal wave heights near ${Math.max(tsunami.coastalWaveHeight / 1000, 0).toFixed(1)} m with inundation reaching about ${tsunami.inundationDistanceKm.toFixed(1)} km inland.`
         : "";
 
-    return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleDeg.toFixed(0)}° and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
+    return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleDeg.toFixed(0)}� and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
 }
 
 app.get("/api/geocode", async (req, res) => {
@@ -624,7 +658,7 @@ app.get("/api/geology", async (req, res) => {
 app.get("/api/asteroids", async (_req, res) => {
     try {
         const url = `https://api.nasa.gov/neo/rest/v1/neo/browse?size=12&api_key=${NASA_API_KEY}`;
-        const catalog = await fetchJson(url);
+        const catalog = await fetchJson(url, { timeoutMs: 8000 });
         const asteroids = (catalog?.near_earth_objects ?? []).map((neo) => {
             const diameterData = neo?.estimated_diameter?.meters;
             const diameter = diameterData
@@ -640,7 +674,8 @@ app.get("/api/asteroids", async (_req, res) => {
                 velocity: clamp(velocity, 5, 75),
                 density,
                 impactAngle: 45,
-                absoluteMagnitude: neo.absolute_magnitude_h
+                absoluteMagnitude: neo.absolute_magnitude_h,
+                source: neo.is_sentry_object ? "sentry" : "neo"
             };
         });
         res.json({
@@ -648,7 +683,16 @@ app.get("/api/asteroids", async (_req, res) => {
             summary: `Fetched ${asteroids.length} objects from NASA's catalog (NEO browse).`
         });
     } catch (error) {
-        res.status(500).json({ error: "Failed to load asteroid catalog", details: error.message });
+        const asteroids = fallbackAsteroids.map((neo) => ({
+            ...neo,
+            diameter: clamp(Number(neo.diameter) || 150, 5, 100000),
+            velocity: clamp(Number(neo.velocity) || 22, 5, 75),
+            density: clamp(Number(neo.density) || 3200, 500, 11000)
+        }));
+        res.json({
+            asteroids,
+            summary: `Using offline asteroid presets (${asteroids.length} objects). NASA catalog unavailable: ${error.message}`
+        });
     }
 });
 

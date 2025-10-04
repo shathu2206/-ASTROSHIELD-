@@ -17,6 +17,7 @@ const summaryText = document.getElementById("summary-text");
 const populationSummary = document.getElementById("population-summary");
 const asteroidSelect = document.getElementById("asteroid-select");
 const asteroidMeta = document.getElementById("asteroid-meta");
+const resultsCard = document.querySelector(".results-card");
 const refreshAsteroidsBtn = document.getElementById("refresh-asteroids");
 const locationForm = document.getElementById("location-form");
 const locationInput = document.getElementById("location-query");
@@ -407,6 +408,9 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
                 segments.push(`Elevation: ${Math.round(elevation)} m`);
             }
         }
+        if (geology?.fallback) {
+            segments.push("Surface data approximated");
+        }
         centerEnvironmentEl.textContent = segments.length ? segments.join(" | ") : DEFAULT_ENVIRONMENT_TEXT;
         centerEnvironmentEl.classList.toggle("muted", segments.length === 0);
     }
@@ -424,6 +428,10 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
     impactMarker.bindPopup(popupHtml, { closeButton: true, autoClose: false });
     if (openPopup) {
         impactMarker.openPopup();
+    }
+
+    if (geology?.fallback?.reason) {
+        updateMapStatus(`Location context approximated: ${geology.fallback.reason}`, { sticky: true });
     }
 }
 
