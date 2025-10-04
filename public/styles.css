@@ -23,6 +23,10 @@ body {
     overflow: hidden;
 }
 
+.muted {
+    color: var(--muted);
+}
+
 .layout {
     display: grid;
     grid-template-columns: minmax(520px, 1fr) minmax(420px, 38vw);
@@ -282,12 +286,6 @@ body {
     font-size: 1.26rem;
 }
 
-.asteroid-picker {
-    display: grid;
-    gap: 0.8rem;
-}
-
-.asteroid-picker button,
 .primary {
     padding: 0.85rem;
     border-radius: 12px;
@@ -297,9 +295,19 @@ body {
     background: linear-gradient(135deg, var(--accent), var(--accent-strong));
     color: #1b1610;
     cursor: pointer;
+.asteroid-search {
+    display: grid;
+    gap: 0.9rem;
 }
 
-.asteroid-picker select,
+.asteroid-search-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.9rem;
+}
+
+.asteroid-search select,
+.asteroid-search input,
 .config-form select,
 .config-form input {
     width: 100%;
@@ -344,6 +352,131 @@ body {
     margin: 0;
     font-size: 0.85rem;
     color: var(--muted);
+}
+
+.checkbox-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.95rem;
+    color: var(--muted);
+}
+
+.checkbox input {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--accent);
+}
+
+.asteroid-results-wrapper {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.asteroid-summary {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.asteroid-results {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.75rem;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.asteroid-result {
+    padding: 0.75rem 0.95rem;
+    border-radius: 14px;
+    background: rgba(10, 14, 26, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    display: grid;
+    gap: 0.45rem;
+}
+
+.asteroid-result.selected {
+    border-color: rgba(255, 190, 92, 0.8);
+    box-shadow: 0 0 0 1px rgba(255, 190, 92, 0.4);
+}
+
+.asteroid-result-title {
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.asteroid-result-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.asteroid-result-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.asteroid-result-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.asteroid-result-approach {
+    font-size: 0.85rem;
+    color: var(--muted);
+    flex: 1 1 auto;
+}
+
+.asteroid-link {
+    font-size: 0.85rem;
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.asteroid-link:hover,
+.asteroid-link:focus-visible {
+    text-decoration: underline;
+}
+
+.asteroid-use {
+    padding: 0.65rem 0.85rem;
+    border-radius: 10px;
+    border: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+    background: rgba(255, 190, 92, 0.16);
+    color: var(--accent);
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.asteroid-use:hover,
+.asteroid-use:focus-visible {
+    background: rgba(255, 190, 92, 0.32);
+    color: var(--text);
+}
+
+.asteroid-load-more {
+    justify-self: center;
+    width: 100%;
+}
+
+.asteroid-search-actions {
+    justify-content: space-between;
 }
 
 .config-form {

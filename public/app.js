@@ -15,10 +15,18 @@ const terrainSelect = document.getElementById("terrain");
 
 const summaryText = document.getElementById("summary-text");
 const populationSummary = document.getElementById("population-summary");
-const asteroidSelect = document.getElementById("asteroid-select");
 const asteroidMeta = document.getElementById("asteroid-meta");
+const asteroidResultsSummary = document.getElementById("asteroid-results-summary");
+const asteroidResultsList = document.getElementById("asteroid-results");
+const asteroidSearchForm = document.getElementById("asteroid-search-form");
+const asteroidQueryInput = document.getElementById("asteroid-query");
+const asteroidMinDiameterInput = document.getElementById("asteroid-min-diameter");
+const asteroidMaxDiameterInput = document.getElementById("asteroid-max-diameter");
+const asteroidCompositionSelect = document.getElementById("asteroid-composition");
+const asteroidHazardCheckbox = document.getElementById("asteroid-hazard");
+const asteroidLoadMoreBtn = document.getElementById("asteroid-load-more");
+const asteroidResetBtn = document.getElementById("asteroid-reset");
 const resultsCard = document.querySelector(".results-card");
-const refreshAsteroidsBtn = document.getElementById("refresh-asteroids");
 const locationForm = document.getElementById("location-form");
 const locationInput = document.getElementById("location-query");
 const resetButton = document.getElementById("reset-form");
@@ -50,7 +58,8 @@ const DEFAULT_POPULATION_TEXT =
 const DEFAULT_COORDINATE_TEXT = centerCoordinatesEl?.textContent ?? "No impact location selected";
 const DEFAULT_COORDINATE_LABEL = centerLabelEl?.textContent ?? "";
 const DEFAULT_ENVIRONMENT_TEXT = centerEnvironmentEl?.textContent ?? "Surface context unavailable.";
-const DEFAULT_ASTEROID_META = asteroidMeta?.textContent ?? "Using manually configured parameters.";
+const DEFAULT_ASTEROID_META =
+    asteroidMeta?.textContent ?? "Search NASA's Near-Earth Object catalog to auto-fill impact parameters.";
 const DEFAULT_MAP_VIEW = { center: [20, 0], zoom: 3 };
 
 const RESULT_FIELDS = [
@@ -95,6 +104,14 @@ const FOOTPRINT_STYLE = {
     tsunami: { fillOpacity: 0.14, weight: 1.4 }
 };
 
+const COMPOSITION_DISPLAY = {
+    stony: "Stony",
+    iron: "Iron-rich",
+    carbonaceous: "Carbonaceous",
+    cometary: "Cometary",
+    unknown: "Unknown"
+};
+
 const SIZE_REFERENCES = [
     { size: 12, label: "a city bus (~12 m long)" },
     { size: 25, label: "a blue whale (~25 m long)" },
@@ -115,6 +132,20 @@ let map = null;
 let impactMarker = null;
 let footprintLayer = null;
 let latestAsteroids = [];
+let selectedAsteroidId = null;
+const asteroidSearchState = {
+    query: "",
+    minDiameter: null,
+    maxDiameter: null,
+    composition: "",
+    hazardousOnly: false,
+    page: 0,
+    pageSize: 25,
+    hasMore: false,
+    totalItems: 0,
+    loading: false,
+    source: null
+};
 let selectedLocation = null;
 let populationAbortController = null;
 let mapStatusTimer = null;
@@ -505,13 +536,12 @@ function resetSimulation() {
 
     if (populationSummary) populationSummary.textContent = DEFAULT_POPULATION_TEXT;
 
-    if (asteroidSelect) {
-        asteroidSelect.value = "custom";
-    }
     applyGeologyToUI(null, { openPopup: false });
     if (asteroidMeta) {
         asteroidMeta.textContent = DEFAULT_ASTEROID_META;
     }
+    selectedAsteroidId = null;
+    renderAsteroidResults();
 
     updateMapStatus("Inputs reset. Drop a new impact pin.");
 }
@@ -796,50 +826,136 @@ function renderResults(data) {
     showResultsCard();
 }
 
-async function fetchAsteroids() {
-    if (!refreshAsteroidsBtn) return;
-    refreshAsteroidsBtn.disabled = true;
-    refreshAsteroidsBtn.textContent = "Loading...";
-    try {
-        const response = await fetch("/api/asteroids");
-        if (!response.ok) throw new Error("Failed to load asteroids");
-        const payload = await response.json();
-        latestAsteroids = payload.asteroids ?? [];
-        if (asteroidSelect) {
-            asteroidSelect.innerHTML = '<option value="custom">Custom asteroid</option>';
-            latestAsteroids.forEach((asteroid, index) => {
-                const option = document.createElement("option");
-                option.value = String(index);
-                const diameterLabel = Number.isFinite(asteroid.diameter)
-                    ? `${Math.round(asteroid.diameter)} m`
-                    : "unknown size";
-                option.textContent = `${asteroid.name} (${diameterLabel})`;
-                asteroidSelect.appendChild(option);
-            });
-        }
-        if (asteroidMeta) {
-            asteroidMeta.textContent = payload.summary ?? "Loaded asteroid sample from catalog.";
-        }
-    } catch (error) {
-        console.error(error);
-        if (asteroidMeta) {
-            asteroidMeta.textContent = "Failed to load asteroid catalog.";
-        }
-    } finally {
-        refreshAsteroidsBtn.disabled = false;
-        refreshAsteroidsBtn.textContent = "Fetch Near-Earth Objects";
+function resetAsteroidResults() {
+    latestAsteroids = [];
+    if (asteroidResultsList) {
+        asteroidResultsList.innerHTML = "";
     }
 }
 
-function applyAsteroidPreset(index) {
-    if (index === "custom" || index === null || index === undefined) {
-        if (asteroidMeta) {
-            asteroidMeta.textContent = "Using manually configured parameters.";
+function updateAsteroidSummary(payload) {
+    if (!asteroidResultsSummary) return;
+    const totalItems = Number(payload?.totalItems ?? asteroidSearchState.totalItems ?? latestAsteroids.length);
+    const sourceLabel = payload?.source === "fallback" ? "offline dataset" : "NASA catalog";
+    if (!latestAsteroids.length) {
+        const hasFilters = Boolean(
+            asteroidSearchState.query ||
+                asteroidSearchState.minDiameter ||
+                asteroidSearchState.maxDiameter ||
+                asteroidSearchState.composition ||
+                asteroidSearchState.hazardousOnly
+        );
+        asteroidResultsSummary.textContent = hasFilters
+            ? "No asteroids matched your filters. Adjust the search criteria and try again."
+            : "No asteroids available yet. Try refreshing the catalog.";
+        return;
+    }
+
+    const shown = latestAsteroids.length;
+    const pageNumber = Number(payload?.page ?? asteroidSearchState.page - 1) + 1;
+    const totalPages = Number(payload?.totalPages ?? 0);
+    const pageInfo = payload?.hasMore || asteroidSearchState.hasMore
+        ? `Page ${pageNumber} of ${totalPages || "?"}`
+        : `Page ${pageNumber}`;
+
+    const details = [`Showing ${shown.toLocaleString()} of ${totalItems.toLocaleString()} objects`, pageInfo, `Source: ${sourceLabel}`];
+    asteroidResultsSummary.textContent = details.join(" • ");
+}
+
+function renderAsteroidResults() {
+    if (!asteroidResultsList) return;
+    asteroidResultsList.innerHTML = "";
+
+    if (!latestAsteroids.length) {
+        if (!asteroidSearchState.loading && asteroidSearchState.page > 0) {
+            const empty = document.createElement("li");
+            empty.className = "asteroid-result muted";
+            empty.textContent = "No asteroids matched the current filters.";
+            asteroidResultsList.appendChild(empty);
         }
         return;
     }
-    const asteroid = latestAsteroids[Number(index)];
+
+    const fragment = document.createDocumentFragment();
+
+    latestAsteroids.forEach((asteroid) => {
+        const item = document.createElement("li");
+        item.className = "asteroid-result";
+        if (selectedAsteroidId && asteroid.id === selectedAsteroidId) {
+            item.classList.add("selected");
+        }
+
+        const title = document.createElement("div");
+        title.className = "asteroid-result-title";
+        const designation = asteroid.designation ? ` (${asteroid.designation})` : "";
+        title.textContent = `${asteroid.name ?? "Unnamed object"}${designation}`;
+        item.appendChild(title);
+
+        const meta = document.createElement("div");
+        meta.className = "asteroid-result-meta";
+
+        const sizeSpan = document.createElement("span");
+        sizeSpan.textContent = `Size: ${formatAsteroidDiameterRange(asteroid)}`;
+        meta.appendChild(sizeSpan);
+
+        const compositionSpan = document.createElement("span");
+        compositionSpan.textContent = `Composition: ${getCompositionLabel(asteroid.composition)}`;
+        meta.appendChild(compositionSpan);
+
+        if (asteroid.velocity) {
+            const velocitySpan = document.createElement("span");
+            velocitySpan.textContent = `Velocity: ${formatAsteroidVelocity(asteroid.velocity)}`;
+            meta.appendChild(velocitySpan);
+        }
+
+        const hazardSpan = document.createElement("span");
+        hazardSpan.textContent = asteroid.hazardous ? "Potentially hazardous" : "Not flagged as hazardous";
+        meta.appendChild(hazardSpan);
+
+        item.appendChild(meta);
+
+        const actions = document.createElement("div");
+        actions.className = "asteroid-result-actions";
+
+        const approachInfo = document.createElement("span");
+        approachInfo.className = "asteroid-result-approach";
+        const approachParts = [
+            `Last approach: ${formatApproachDate(asteroid.approachDate)}`,
+            asteroid.orbitClass ? `Orbit: ${asteroid.orbitClass}` : null
+        ].filter(Boolean);
+        approachInfo.textContent = approachParts.join(" • ") || "Orbit data unavailable";
+        actions.appendChild(approachInfo);
+
+        if (asteroid.nasaJplUrl) {
+            const link = document.createElement("a");
+            link.className = "asteroid-link";
+            link.href = asteroid.nasaJplUrl;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = "View on JPL";
+            actions.appendChild(link);
+        }
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "asteroid-use";
+        button.textContent = "Load parameters";
+        button.addEventListener("click", () => {
+            applyAsteroidPresetFromData(asteroid);
+        });
+        actions.appendChild(button);
+
+        item.appendChild(actions);
+        fragment.appendChild(item);
+    });
+
+    asteroidResultsList.appendChild(fragment);
+}
+
+function applyAsteroidPresetFromData(asteroid) {
     if (!asteroid) return;
+    selectedAsteroidId = asteroid.id ?? asteroid.name ?? null;
+
     if (diameterInput && Number.isFinite(asteroid.diameter)) {
         diameterInput.value = Math.round(asteroid.diameter);
     }
@@ -865,14 +981,158 @@ function applyAsteroidPreset(index) {
             densitySelect.value = "3000";
         }
     }
+
+    const details = [
+        formatAsteroidDiameterRange(asteroid),
+        getCompositionLabel(asteroid.composition),
+        asteroid.hazardous ? "potentially hazardous" : "not flagged as hazardous"
+    ];
+    const designation = asteroid.designation ? ` (${asteroid.designation})` : "";
     if (asteroidMeta) {
-        const designation = asteroid.designation ? `: ${asteroid.designation}` : "";
-        const magnitude = Number.isFinite(asteroid.absoluteMagnitude)
-            ? ` | H=${asteroid.absoluteMagnitude}`
-            : "";
-        asteroidMeta.textContent = `Loaded ${asteroid.name}${designation}${magnitude}`;
+        asteroidMeta.textContent = `Loaded ${asteroid.name}${designation} • ${details.join(" • ")}`;
     }
+
     updateSizeComparison();
+    renderAsteroidResults();
+}
+
+function readAsteroidSearchForm() {
+    asteroidSearchState.query = asteroidQueryInput?.value.trim() ?? "";
+    asteroidSearchState.minDiameter = readNumberFromInput(asteroidMinDiameterInput);
+    asteroidSearchState.maxDiameter = readNumberFromInput(asteroidMaxDiameterInput);
+    asteroidSearchState.composition = asteroidCompositionSelect?.value ?? "";
+    asteroidSearchState.hazardousOnly = Boolean(asteroidHazardCheckbox?.checked);
+    asteroidSearchState.page = 0;
+    asteroidSearchState.hasMore = false;
+    asteroidSearchState.totalItems = 0;
+}
+
+function readNumberFromInput(input) {
+    if (!input) return null;
+    const value = Number(input.value);
+    return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+async function fetchAsteroidCatalog({ append = false } = {}) {
+    if (asteroidSearchState.loading) return;
+
+    if (!append) {
+        selectedAsteroidId = null;
+        resetAsteroidResults();
+        if (asteroidResultsSummary) {
+            asteroidResultsSummary.textContent = "Searching NASA's Near-Earth Object catalog...";
+        }
+    } else if (asteroidLoadMoreBtn) {
+        asteroidLoadMoreBtn.disabled = true;
+        asteroidLoadMoreBtn.textContent = "Loading...";
+    }
+
+    asteroidSearchState.loading = true;
+
+    const page = append ? asteroidSearchState.page : 0;
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("size", String(asteroidSearchState.pageSize));
+    if (asteroidSearchState.query) params.set("q", asteroidSearchState.query);
+    if (asteroidSearchState.minDiameter != null) params.set("minDiameter", String(asteroidSearchState.minDiameter));
+    if (asteroidSearchState.maxDiameter != null) params.set("maxDiameter", String(asteroidSearchState.maxDiameter));
+    if (asteroidSearchState.composition) params.set("composition", asteroidSearchState.composition);
+    if (asteroidSearchState.hazardousOnly) params.set("hazardous", "true");
+
+    try {
+        const response = await fetch(`/api/asteroids/search?${params.toString()}`);
+        if (!response.ok) throw new Error("Failed to query asteroid catalog");
+        const payload = await response.json();
+
+        const asteroids = Array.isArray(payload?.asteroids) ? payload.asteroids : [];
+        latestAsteroids = append ? [...latestAsteroids, ...asteroids] : asteroids;
+
+        asteroidSearchState.pageSize = Number(payload?.pageSize) || asteroidSearchState.pageSize;
+        const currentPage = Number(payload?.page);
+        if (Number.isFinite(currentPage)) {
+            asteroidSearchState.page = currentPage + 1;
+        } else {
+            asteroidSearchState.page = append ? asteroidSearchState.page + 1 : 1;
+        }
+        asteroidSearchState.hasMore = Boolean(payload?.hasMore);
+        asteroidSearchState.totalItems = Number(payload?.totalItems) || latestAsteroids.length;
+        asteroidSearchState.source = payload?.source ?? "nasa";
+
+        renderAsteroidResults();
+        updateAsteroidSummary(payload);
+
+        if (asteroidMeta) {
+            asteroidMeta.textContent = payload?.summary ??
+                (payload?.source === "fallback"
+                    ? "Loaded offline asteroid catalog."
+                    : "Loaded asteroid sample from NASA's catalog.");
+        }
+
+        if (asteroidLoadMoreBtn) {
+            asteroidLoadMoreBtn.textContent = "Load more objects";
+            if (asteroidSearchState.hasMore) {
+                asteroidLoadMoreBtn.hidden = false;
+                asteroidLoadMoreBtn.disabled = false;
+            } else {
+                asteroidLoadMoreBtn.hidden = true;
+                asteroidLoadMoreBtn.disabled = true;
+            }
+        }
+    } catch (error) {
+        console.error(error);
+        if (!append) {
+            latestAsteroids = [];
+            renderAsteroidResults();
+        }
+        if (asteroidResultsSummary) {
+            asteroidResultsSummary.textContent = "Failed to load asteroid catalog.";
+        }
+        if (asteroidMeta) {
+            asteroidMeta.textContent = "Failed to load asteroid catalog.";
+        }
+        if (asteroidLoadMoreBtn) {
+            asteroidLoadMoreBtn.textContent = "Load more objects";
+            asteroidLoadMoreBtn.disabled = true;
+        }
+    } finally {
+        asteroidSearchState.loading = false;
+    }
+}
+
+function resetAsteroidSearch() {
+    if (asteroidQueryInput) asteroidQueryInput.value = "";
+    if (asteroidMinDiameterInput) asteroidMinDiameterInput.value = "";
+    if (asteroidMaxDiameterInput) asteroidMaxDiameterInput.value = "";
+    if (asteroidCompositionSelect) asteroidCompositionSelect.value = "";
+    if (asteroidHazardCheckbox) asteroidHazardCheckbox.checked = false;
+
+    asteroidSearchState.query = "";
+    asteroidSearchState.minDiameter = null;
+    asteroidSearchState.maxDiameter = null;
+    asteroidSearchState.composition = "";
+    asteroidSearchState.hazardousOnly = false;
+    asteroidSearchState.page = 0;
+    asteroidSearchState.hasMore = false;
+    asteroidSearchState.totalItems = 0;
+
+    selectedAsteroidId = null;
+    resetAsteroidResults();
+    if (asteroidResultsSummary) {
+        asteroidResultsSummary.textContent = "No results yet. Submit a search to explore asteroids.";
+    }
+    if (asteroidMeta) {
+        asteroidMeta.textContent = DEFAULT_ASTEROID_META;
+    }
+    if (asteroidLoadMoreBtn) {
+        asteroidLoadMoreBtn.hidden = true;
+        asteroidLoadMoreBtn.disabled = true;
+        asteroidLoadMoreBtn.textContent = "Load more objects";
+    }
+}
+
+function initializeAsteroidCatalog() {
+    resetAsteroidSearch();
+    fetchAsteroidCatalog({ append: false });
 }
 
 async function geocode(query) {
@@ -1014,6 +1274,50 @@ function formatDiameterLabel(diameter) {
     return `${Math.round(diameter)} m`;
 }
 
+function getCompositionLabel(key) {
+    return COMPOSITION_DISPLAY[key] ?? COMPOSITION_DISPLAY.unknown;
+}
+
+function formatAsteroidDiameterRange(asteroid) {
+    if (!asteroid) return "Unknown size";
+    const { diameterMin, diameterMax, diameter } = asteroid;
+    const min = Number(diameterMin);
+    const max = Number(diameterMax);
+    if (Number.isFinite(min) && Number.isFinite(max)) {
+        if (Math.abs(max - min) < 1) {
+            return `${Math.round((min + max) / 2)} m`;
+        }
+        return `${Math.round(min)}–${Math.round(max)} m`;
+    }
+    if (Number.isFinite(diameter)) {
+        return `${Math.round(diameter)} m`;
+    }
+    return "Unknown size";
+}
+
+function formatAsteroidVelocity(velocity) {
+    const value = Number(velocity);
+    if (!Number.isFinite(value) || value <= 0) {
+        return "--";
+    }
+    return `${value.toFixed(1)} km/s`;
+}
+
+function formatApproachDate(date) {
+    if (!date) {
+        return "No recent approach";
+    }
+    try {
+        const parsed = new Date(date);
+        if (Number.isNaN(parsed.getTime())) {
+            return date;
+        }
+        return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    } catch (error) {
+        return date;
+    }
+}
+
 function describeAsteroidSize(diameter) {
     if (!Number.isFinite(diameter) || diameter <= 0) {
         return "Set a positive diameter to compare with familiar objects.";
@@ -1075,21 +1379,30 @@ if (diameterInput) {
     });
 }
 
-if (asteroidSelect) {
-    asteroidSelect.addEventListener("change", (event) => {
-        applyAsteroidPreset(event.target.value);
-    });
-}
-
 if (terrainSelect) {
     terrainSelect.addEventListener("change", () => {
         applyGeologyToUI(latestGeology, { openPopup: false });
     });
 }
 
-if (refreshAsteroidsBtn) {
-    refreshAsteroidsBtn.addEventListener("click", () => {
-        fetchAsteroids();
+if (asteroidSearchForm) {
+    asteroidSearchForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        readAsteroidSearchForm();
+        fetchAsteroidCatalog({ append: false });
+    });
+}
+
+if (asteroidResetBtn) {
+    asteroidResetBtn.addEventListener("click", () => {
+        resetAsteroidSearch();
+        fetchAsteroidCatalog({ append: false });
+    });
+}
+
+if (asteroidLoadMoreBtn) {
+    asteroidLoadMoreBtn.addEventListener("click", () => {
+        fetchAsteroidCatalog({ append: true });
     });
 }
 
@@ -1101,6 +1414,6 @@ if (locationForm) {
 }
 
 initMap();
-fetchAsteroids();
+initializeAsteroidCatalog();
 updateSizeComparison();
 resetResultDisplay();

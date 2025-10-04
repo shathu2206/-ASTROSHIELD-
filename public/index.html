@@ -32,14 +32,60 @@
                 <p>Model an impact, explore multi-hazard footprints, and estimate casualties with live datasets.</p>
             </header>
 
-            <section class="card">
-                <h2>Asteroid Presets</h2>
-                <div class="asteroid-picker">
-                    <button id="refresh-asteroids" type="button">Fetch Near-Earth Objects</button>
-                    <select id="asteroid-select">
-                        <option value="custom" selected>Custom asteroid</option>
-                    </select>
-                    <p class="asteroid-meta" id="asteroid-meta">Using manually configured parameters.</p>
+            <section class="card" id="asteroid-catalog">
+                <h2>Asteroid Catalog</h2>
+                <form id="asteroid-search-form" class="asteroid-search" autocomplete="off">
+                    <label class="field">
+                        <span>Search catalog</span>
+                        <div class="input">
+                            <input type="search" id="asteroid-query" name="q" placeholder="Search by name or designation" />
+                        </div>
+                    </label>
+                    <div class="grid asteroid-search-grid">
+                        <label class="field">
+                            <span>Min diameter</span>
+                            <div class="input">
+                                <input type="number" id="asteroid-min-diameter" name="minDiameter" min="0" step="any" />
+                                <span class="unit">meters</span>
+                            </div>
+                        </label>
+                        <label class="field">
+                            <span>Max diameter</span>
+                            <div class="input">
+                                <input type="number" id="asteroid-max-diameter" name="maxDiameter" min="0" step="any" />
+                                <span class="unit">meters</span>
+                            </div>
+                        </label>
+                    </div>
+                    <div class="grid asteroid-search-grid">
+                        <label class="field">
+                            <span>Composition</span>
+                            <select id="asteroid-composition" name="composition">
+                                <option value="">All compositions</option>
+                                <option value="stony">Stony</option>
+                                <option value="iron">Iron-rich</option>
+                                <option value="carbonaceous">Carbonaceous</option>
+                                <option value="cometary">Cometary</option>
+                            </select>
+                        </label>
+                        <div class="field checkbox-field">
+                            <span>Hazards</span>
+                            <label class="checkbox">
+                                <input type="checkbox" id="asteroid-hazard" name="hazardous" />
+                                <span>Only potentially hazardous</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-actions asteroid-search-actions">
+                        <button type="submit" class="primary">Search catalog</button>
+                        <button type="button" id="asteroid-reset" class="secondary">Reset filters</button>
+                    </div>
+                </form>
+                <p class="asteroid-meta" id="asteroid-meta">Search NASA's Near-Earth Object catalog to auto-fill impact parameters.</p>
+                <div class="asteroid-results-wrapper">
+                    <p id="asteroid-results-summary" class="asteroid-summary muted">No results yet. Submit a search to explore asteroids.</p>
+                    <ul id="asteroid-results" class="asteroid-results" aria-live="polite"></ul>
+                    <button type="button" id="asteroid-load-more" class="secondary asteroid-load-more" hidden>Load more objects</button>
                 </div>
             </section>
 

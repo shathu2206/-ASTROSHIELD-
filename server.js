@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
+import fallbackAsteroids from "./data/asteroids-fallback.json" with { type: "json" };
 
 dotenv.config();
 
@@ -99,6 +100,210 @@ async function fetchJson(url, options = {}) {
 
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
+}
+
+function toNumber(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
+const COMPOSITION_DENSITY = {
+    iron: 7800,
+    stony: 3300,
+    carbonaceous: 1800,
+    cometary: 600,
+    unknown: 3200
+};
+
+const FALLBACK_ASTEROID_RECORDS = Array.isArray(fallbackAsteroids)
+    ? fallbackAsteroids.map((item) => buildFallbackAsteroidRecord(item))
+    : [];
+
+function estimateComposition(neo, diameterMeters) {
+    const name = String(neo?.name ?? "").toLowerCase();
+    if (/^(c|p)\//.test(name) || /comet/.test(name)) {
+        return "cometary";
+    }
+
+    const absoluteMagnitude = toNumber(neo?.absolute_magnitude_h);
+    const orbitClass = String(neo?.orbital_data?.orbit_class?.orbit_class_type ?? "").toLowerCase();
+
+    if (orbitClass.includes("aten") || orbitClass.includes("apollo")) {
+        if (absoluteMagnitude != null && absoluteMagnitude <= 17.5) {
+            return "iron";
+        }
+    }
+
+    if (absoluteMagnitude != null && absoluteMagnitude >= 22.2) {
+        return "carbonaceous";
+    }
+
+    if (diameterMeters != null) {
+        if (diameterMeters >= 1000 && (absoluteMagnitude == null || absoluteMagnitude <= 19.5)) {
+            return "iron";
+        }
+        if (diameterMeters <= 150 && (absoluteMagnitude == null || absoluteMagnitude >= 21)) {
+            return "carbonaceous";
+        }
+    }
+
+    return "stony";
+}
+
+function compositionLabel(key) {
+    switch (key) {
+        case "iron":
+            return "Iron-rich";
+        case "stony":
+            return "Stony";
+        case "carbonaceous":
+            return "Carbonaceous";
+        case "cometary":
+            return "Cometary";
+        default:
+            return "Unknown";
+    }
+}
+
+function buildAsteroidRecord(neo) {
+    const diameter = neo?.estimated_diameter?.meters;
+    const diameterMin = toNumber(diameter?.estimated_diameter_min);
+    const diameterMax = toNumber(diameter?.estimated_diameter_max);
+    const avgDiameter =
+        diameterMin != null && diameterMax != null
+            ? (diameterMin + diameterMax) / 2
+            : diameterMin ?? diameterMax ?? null;
+
+    const approach = (neo?.close_approach_data ?? []).find((entry) =>
+        Number.isFinite(Number(entry?.relative_velocity?.kilometers_per_second))
+    );
+
+    const approachVelocity = toNumber(approach?.relative_velocity?.kilometers_per_second);
+    const composition = estimateComposition(neo, avgDiameter);
+
+    const density = COMPOSITION_DENSITY[composition] ?? COMPOSITION_DENSITY.unknown;
+
+    const fallbackId = `neo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    return {
+        id: String(neo?.id ?? neo?.neo_reference_id ?? neo?.designation ?? neo?.name ?? fallbackId),
+        name: neo?.name ?? "Unknown object",
+        designation: neo?.designation ?? neo?.neo_reference_id ?? null,
+        diameter: avgDiameter != null ? clamp(avgDiameter, 5, 100000) : null,
+        diameterMin,
+        diameterMax,
+        velocity: approachVelocity != null ? clamp(approachVelocity, 1, 150) : null,
+        impactAngle: 45,
+        density,
+        absoluteMagnitude: toNumber(neo?.absolute_magnitude_h),
+        composition,
+        compositionLabel: compositionLabel(composition),
+        hazardous: Boolean(neo?.is_potentially_hazardous_asteroid),
+        approachDate: approach?.close_approach_date_full ?? approach?.close_approach_date ?? null,
+        approachBody: approach?.orbiting_body ?? null,
+        orbitClass: neo?.orbital_data?.orbit_class?.orbit_class_type ?? null,
+        nasaJplUrl: neo?.nasa_jpl_url ?? null,
+        source: "nasa"
+    };
+}
+
+function buildFallbackAsteroidRecord(asteroid) {
+    const diameter = clamp(Number(asteroid.diameter) || 0, 5, 100000);
+    const density = clamp(Number(asteroid.density) || COMPOSITION_DENSITY.unknown, 500, 11000);
+    const velocity = clamp(Number(asteroid.velocity) || 22, 1, 150);
+
+    const composition =
+        density >= 6000
+            ? "iron"
+            : density <= 800
+            ? "cometary"
+            : density <= 1800
+            ? "carbonaceous"
+            : "stony";
+
+    return {
+        id: String(asteroid.designation ?? asteroid.name ?? `fallback-${Math.random()}`),
+        name: asteroid.name,
+        designation: asteroid.designation ?? null,
+        diameter,
+        diameterMin: diameter,
+        diameterMax: diameter,
+        velocity,
+        impactAngle: clamp(Number(asteroid.impactAngle) || 45, 5, 90),
+        density,
+        absoluteMagnitude: toNumber(asteroid.absoluteMagnitude),
+        composition,
+        compositionLabel: compositionLabel(composition),
+        hazardous: asteroid.source !== "comet",
+        approachDate: null,
+        approachBody: null,
+        orbitClass: asteroid.source === "comet" ? "Comet" : "Near-Earth Object",
+        nasaJplUrl: null,
+        source: "fallback"
+    };
+}
+
+function filterAsteroidRecords(records, { query, minDiameter, maxDiameter, compositions, hazardousOnly }) {
+    return records.filter((record) => {
+        if (hazardousOnly && !record.hazardous) {
+            return false;
+        }
+
+        if (Array.isArray(compositions) && compositions.length > 0) {
+            if (!record.composition || !compositions.includes(record.composition)) {
+                return false;
+            }
+        }
+
+        if (minDiameter != null && Number.isFinite(minDiameter) && record.diameter != null) {
+            if (record.diameter < minDiameter) {
+                return false;
+            }
+        }
+
+        if (maxDiameter != null && Number.isFinite(maxDiameter) && record.diameter != null) {
+            if (record.diameter > maxDiameter) {
+                return false;
+            }
+        }
+
+        if (query) {
+            const haystack = [record.name, record.designation].filter(Boolean).join(" ").toLowerCase();
+            if (!haystack.includes(query)) {
+                return false;
+            }
+        }
+
+        return true;
+    });
+}
+
+async function loadNasaCatalog({ page = 0, size = 25, signal } = {}) {
+    const safePage = Number.isFinite(page) && page >= 0 ? Math.min(page, 2000) : 0;
+    const safeSize = clamp(Number(size) || 25, 1, 100);
+    const url = `https://api.nasa.gov/neo/rest/v1/neo/browse?page=${safePage}&size=${safeSize}&api_key=${NASA_API_KEY}`;
+    const catalog = await fetchJson(url, { timeoutMs: 12000, signal });
+    const neos = Array.isArray(catalog?.near_earth_objects) ? catalog.near_earth_objects : [];
+    const records = neos.map((neo) => buildAsteroidRecord(neo));
+    const pageInfo = {
+        page: Number.isFinite(Number(catalog?.page?.number)) ? Number(catalog.page.number) : safePage,
+        size: Number.isFinite(Number(catalog?.page?.size)) ? Number(catalog.page.size) : safeSize,
+        totalPages: Number.isFinite(Number(catalog?.page?.total_pages)) ? Number(catalog.page.total_pages) : 0,
+        totalItems: Number.isFinite(Number(catalog?.page?.total_elements)) ? Number(catalog.page.total_elements) : records.length
+    };
+    const hasMore = pageInfo.page < pageInfo.totalPages - 1;
+    const summary = `Fetched ${records.length.toLocaleString()} objects from NASA's Near-Earth Object catalog (page ${
+        pageInfo.page + 1
+    } of ${pageInfo.totalPages || 1}).`;
+    return { records, pageInfo, hasMore, summary };
+}
+
+function parseCompositionFilters(value) {
+    if (value == null) return [];
+    const items = Array.isArray(value) ? value : String(value).split(",");
+    return items
+        .map((item) => item.trim().toLowerCase())
+        .filter((item) => ["stony", "iron", "carbonaceous", "cometary", "unknown"].includes(item));
 }
 
 function haversineDistance([lat1, lon1], [lat2, lon2]) {
@@ -688,43 +893,60 @@ app.get("/api/geology", async (req, res) => {
     }
 });
 
-app.get("/api/asteroids", async (_req, res) => {
+app.get("/api/asteroids/search", async (req, res) => {
+    const page = Number(req.query.page) || 0;
+    const size = Number(req.query.size) || 25;
+    const query = String(req.query.q ?? "").trim().toLowerCase();
+    const minDiameter = toNumber(req.query.minDiameter);
+    const maxDiameter = toNumber(req.query.maxDiameter);
+    const hazardousOnly = String(req.query.hazardous ?? "").toLowerCase() === "true";
+    const compositions = parseCompositionFilters(req.query.composition);
+
+    const filters = { query, minDiameter, maxDiameter, compositions, hazardousOnly };
+
     try {
-        const url = `https://api.nasa.gov/neo/rest/v1/neo/browse?size=12&api_key=${NASA_API_KEY}`;
-        const catalog = await fetchJson(url, { timeoutMs: 8000 });
-        const asteroids = (catalog?.near_earth_objects ?? []).map((neo) => {
-            const diameterData = neo?.estimated_diameter?.meters;
-            const diameter = diameterData
-                ? (diameterData.estimated_diameter_min + diameterData.estimated_diameter_max) / 2
-                : 150;
-            const approach = neo?.close_approach_data?.[0];
-            const velocity = approach ? Number(approach.relative_velocity?.kilometers_per_second) : 22;
-            const density = neo.is_potentially_hazardous_asteroid ? 6500 : 3200;
-            return {
-                name: neo.name,
-                designation: neo.designation,
-                diameter,
-                velocity: clamp(velocity, 5, 75),
-                density,
-                impactAngle: 45,
-                absoluteMagnitude: neo.absolute_magnitude_h,
-                source: neo.is_sentry_object ? "sentry" : "neo"
-            };
-        });
+        const { records, pageInfo, hasMore, summary } = await loadNasaCatalog({ page, size });
+        const filtered = filterAsteroidRecords(records, filters);
         res.json({
-            asteroids,
-            summary: `Fetched ${asteroids.length} objects from NASA's catalog (NEO browse).`
+            asteroids: filtered,
+            page: pageInfo.page,
+            pageSize: pageInfo.size,
+            totalPages: pageInfo.totalPages,
+            totalItems: pageInfo.totalItems,
+            hasMore,
+            summary,
+            source: "nasa",
+            filters
         });
     } catch (error) {
-        const asteroids = fallbackAsteroids.map((neo) => ({
-            ...neo,
-            diameter: clamp(Number(neo.diameter) || 150, 5, 100000),
-            velocity: clamp(Number(neo.velocity) || 22, 5, 75),
-            density: clamp(Number(neo.density) || 3200, 500, 11000)
-        }));
+        const filteredFallback = filterAsteroidRecords(FALLBACK_ASTEROID_RECORDS, filters);
         res.json({
-            asteroids,
-            summary: `Using offline asteroid presets (${asteroids.length} objects). NASA catalog unavailable: ${error.message}`
+            asteroids: filteredFallback,
+            page: 0,
+            pageSize: filteredFallback.length,
+            totalPages: 1,
+            totalItems: filteredFallback.length,
+            hasMore: false,
+            summary: `Using offline asteroid presets (${filteredFallback.length} objects). NASA catalog unavailable: ${error.message}`,
+            source: "fallback",
+            filters,
+            error: error.message
+        });
+    }
+});
+
+app.get("/api/asteroids", async (_req, res) => {
+    try {
+        const { records, summary } = await loadNasaCatalog({ page: 0, size: 12 });
+        res.json({
+            asteroids: records,
+            summary
+        });
+    } catch (error) {
+        res.json({
+            asteroids: FALLBACK_ASTEROID_RECORDS,
+            summary: `Using offline asteroid presets (${FALLBACK_ASTEROID_RECORDS.length} objects). NASA catalog unavailable: ${error.message}`,
+            source: "fallback"
         });
     }
 });
