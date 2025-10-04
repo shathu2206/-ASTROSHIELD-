@@ -9,6 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const NASA_API_KEY = process.env.NASA_API_KEY || "DEMO_KEY";
 const DEFAULT_USER_AGENT = "AsteroidImpactLab/1.0 (+https://example.com/contact)";
+const MS_PER_DAY = 86_400_000;
 
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static("public"));
@@ -184,6 +185,8 @@ function buildAsteroidRecord(neo) {
     const density = COMPOSITION_DENSITY[composition] ?? COMPOSITION_DENSITY.unknown;
 
     const fallbackId = `neo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const approachDateIso = approach?.close_approach_date ?? null;
+    const approachDateFull = approach?.close_approach_date_full ?? null;
 
     return {
         id: String(neo?.id ?? neo?.neo_reference_id ?? neo?.designation ?? neo?.name ?? fallbackId),
@@ -199,7 +202,8 @@ function buildAsteroidRecord(neo) {
         composition,
         compositionLabel: compositionLabel(composition),
         hazardous: Boolean(neo?.is_potentially_hazardous_asteroid),
-        approachDate: approach?.close_approach_date_full ?? approach?.close_approach_date ?? null,
+        approachDate: approachDateFull ?? approachDateIso ?? null,
+        approachDateIso,
         approachBody: approach?.orbiting_body ?? null,
         orbitClass: neo?.orbital_data?.orbit_class?.orbit_class_type ?? null,
         nasaJplUrl: neo?.nasa_jpl_url ?? null,
@@ -236,6 +240,7 @@ function buildFallbackAsteroidRecord(asteroid) {
         compositionLabel: compositionLabel(composition),
         hazardous: asteroid.source !== "comet",
         approachDate: null,
+        approachDateIso: null,
         approachBody: null,
         orbitClass: asteroid.source === "comet" ? "Comet" : "Near-Earth Object",
         nasaJplUrl: null,
@@ -243,7 +248,18 @@ function buildFallbackAsteroidRecord(asteroid) {
     };
 }
 
-function filterAsteroidRecords(records, { query, minDiameter, maxDiameter, compositions, hazardousOnly }) {
+function filterAsteroidRecords(records, {
+    query,
+    minDiameter,
+    maxDiameter,
+    compositions,
+    hazardousOnly,
+    startDate,
+    endDate
+}) {
+    const startTime = startDate instanceof Date ? startDate.getTime() : null;
+    const endTime = endDate instanceof Date ? endDate.getTime() + MS_PER_DAY - 1 : null;
+
     return records.filter((record) => {
         if (hazardousOnly && !record.hazardous) {
             return false;
@@ -264,6 +280,21 @@ function filterAsteroidRecords(records, { query, minDiameter, maxDiameter, compo
         if (maxDiameter != null && Number.isFinite(maxDiameter) && record.diameter != null) {
             if (record.diameter > maxDiameter) {
                 return false;
+            }
+        }
+
+        if (startTime != null || endTime != null) {
+            const approachCandidate = record.approachDateIso ?? record.approachDate ?? null;
+            if (approachCandidate) {
+                const approachTime = Date.parse(approachCandidate);
+                if (!Number.isNaN(approachTime)) {
+                    if (startTime != null && approachTime < startTime) {
+                        return false;
+                    }
+                    if (endTime != null && approachTime > endTime) {
+                        return false;
+                    }
+                }
             }
         }
 
@@ -296,6 +327,122 @@ async function loadNasaCatalog({ page = 0, size = 25, signal } = {}) {
         pageInfo.page + 1
     } of ${pageInfo.totalPages || 1}).`;
     return { records, pageInfo, hasMore, summary };
+}
+
+async function loadNasaFeed({ startDate, endDate, page = 0, size = 25, signal } = {}) {
+    if (!startDate) {
+        throw new Error("A start date is required to load the NASA feed");
+    }
+
+    const safeSize = clamp(Number(size) || 25, 1, 100);
+    const safePage = Number.isFinite(page) && page >= 0 ? page : 0;
+    const params = new URLSearchParams({
+        start_date: startDate,
+        api_key: NASA_API_KEY
+    });
+    if (endDate) {
+        params.set("end_date", endDate);
+    }
+
+    const url = `https://api.nasa.gov/neo/rest/v1/feed?${params.toString()}`;
+    const catalog = await fetchJson(url, { timeoutMs: 12000, signal });
+    const nearEarthObjects = catalog?.near_earth_objects ?? {};
+    const records = [];
+
+    const sortedDates = Object.keys(nearEarthObjects).sort();
+    for (const dateKey of sortedDates) {
+        const items = Array.isArray(nearEarthObjects[dateKey]) ? nearEarthObjects[dateKey] : [];
+        for (const neo of items) {
+            const record = buildAsteroidRecord(neo);
+            if (!record.approachDateIso && dateKey) {
+                record.approachDateIso = dateKey;
+            }
+            if (!record.approachDate && dateKey) {
+                record.approachDate = dateKey;
+            }
+            records.push(record);
+        }
+    }
+
+    records.sort((a, b) => {
+        const aTime = Date.parse(a.approachDateIso ?? a.approachDate ?? "");
+        const bTime = Date.parse(b.approachDateIso ?? b.approachDate ?? "");
+        if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
+        if (Number.isNaN(aTime)) return 1;
+        if (Number.isNaN(bTime)) return -1;
+        return aTime - bTime;
+    });
+
+    const totalItems = records.length;
+    const totalPages = Math.max(Math.ceil(totalItems / safeSize), 1);
+    const safePageClamped = Math.min(safePage, totalPages - 1);
+    const startIndex = safePageClamped * safeSize;
+    const pageRecords = records.slice(startIndex, startIndex + safeSize);
+    const hasMore = safePageClamped < totalPages - 1;
+    const summary = `Fetched ${totalItems.toLocaleString()} objects approaching Earth between ${startDate} and ${endDate ?? startDate}.`;
+
+    return {
+        records: pageRecords,
+        pageInfo: {
+            page: safePageClamped,
+            size: safeSize,
+            totalPages,
+            totalItems
+        },
+        hasMore,
+        summary
+    };
+}
+
+function parseDateParam(value) {
+    if (!value) return null;
+    const trimmed = String(value).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+        return null;
+    }
+    const parsed = new Date(`${trimmed}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) {
+        return null;
+    }
+    return parsed;
+}
+
+function formatDateParam(date) {
+    if (!(date instanceof Date)) return null;
+    return date.toISOString().slice(0, 10);
+}
+
+function resolveDateRange(query) {
+    const rawStart = query.startDate ?? query.start_date;
+    const rawEnd = query.endDate ?? query.end_date;
+    const parsedStart = parseDateParam(rawStart);
+    const parsedEnd = parseDateParam(rawEnd);
+
+    if (!parsedStart && !parsedEnd) {
+        return { start: null, end: null, startString: null, endString: null };
+    }
+
+    const startDate = parsedStart ?? parsedEnd;
+    let endDate = parsedEnd ?? parsedStart ?? null;
+    if (!endDate) {
+        endDate = startDate;
+    }
+
+    if (endDate < startDate) {
+        endDate = startDate;
+    }
+
+    const maxSpan = 7 * MS_PER_DAY;
+    if (endDate.getTime() - startDate.getTime() > maxSpan) {
+        endDate = new Date(startDate.getTime() + maxSpan);
+    }
+
+    return {
+        start: startDate,
+        end: endDate,
+        startString: formatDateParam(startDate),
+        endString: formatDateParam(endDate)
+    };
 }
 
 function parseCompositionFilters(value) {
@@ -901,12 +1048,29 @@ app.get("/api/asteroids/search", async (req, res) => {
     const maxDiameter = toNumber(req.query.maxDiameter);
     const hazardousOnly = String(req.query.hazardous ?? "").toLowerCase() === "true";
     const compositions = parseCompositionFilters(req.query.composition);
+    const { start: startDateValue, end: endDateValue, startString, endString } = resolveDateRange(req.query);
 
-    const filters = { query, minDiameter, maxDiameter, compositions, hazardousOnly };
+    const filters = {
+        query,
+        minDiameter,
+        maxDiameter,
+        compositions,
+        hazardousOnly,
+        startDate: startString,
+        endDate: endString
+    };
 
     try {
-        const { records, pageInfo, hasMore, summary } = await loadNasaCatalog({ page, size });
-        const filtered = filterAsteroidRecords(records, filters);
+        const loaderOptions = { page, size };
+        const loader = startString
+            ? await loadNasaFeed({ ...loaderOptions, startDate: startString, endDate: endString })
+            : await loadNasaCatalog(loaderOptions);
+        const { records, pageInfo, hasMore, summary } = loader;
+        const filtered = filterAsteroidRecords(records, {
+            ...filters,
+            startDate: startDateValue,
+            endDate: endDateValue
+        });
         res.json({
             asteroids: filtered,
             page: pageInfo.page,
@@ -919,7 +1083,19 @@ app.get("/api/asteroids/search", async (req, res) => {
             filters
         });
     } catch (error) {
-        const filteredFallback = filterAsteroidRecords(FALLBACK_ASTEROID_RECORDS, filters);
+        const filteredFallback = filterAsteroidRecords(FALLBACK_ASTEROID_RECORDS, {
+            ...filters,
+            startDate: startDateValue,
+            endDate: endDateValue
+        });
+        const rangeNote = startString
+            ? ` Requested range ${startString}${endString && endString !== startString ? ` to ${endString}` : ""}.`
+            : "";
+        const summaryParts = [
+            `Using offline asteroid presets (${filteredFallback.length} objects).`,
+            error?.message ? `NASA catalog unavailable: ${error.message}` : "NASA catalog unavailable.",
+            rangeNote.trim()
+        ].filter(Boolean);
         res.json({
             asteroids: filteredFallback,
             page: 0,
@@ -927,7 +1103,7 @@ app.get("/api/asteroids/search", async (req, res) => {
             totalPages: 1,
             totalItems: filteredFallback.length,
             hasMore: false,
-            summary: `Using offline asteroid presets (${filteredFallback.length} objects). NASA catalog unavailable: ${error.message}`,
+            summary: summaryParts.join(" ").replace(/\s+/g, " ").trim(),
             source: "fallback",
             filters,
             error: error.message

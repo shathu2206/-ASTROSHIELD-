@@ -20,6 +20,8 @@ const asteroidResultsSummary = document.getElementById("asteroid-results-summary
 const asteroidResultsList = document.getElementById("asteroid-results");
 const asteroidSearchForm = document.getElementById("asteroid-search-form");
 const asteroidQueryInput = document.getElementById("asteroid-query");
+const asteroidStartDateInput = document.getElementById("asteroid-start-date");
+const asteroidEndDateInput = document.getElementById("asteroid-end-date");
 const asteroidMinDiameterInput = document.getElementById("asteroid-min-diameter");
 const asteroidMaxDiameterInput = document.getElementById("asteroid-max-diameter");
 const asteroidCompositionSelect = document.getElementById("asteroid-composition");
@@ -61,6 +63,7 @@ const DEFAULT_ENVIRONMENT_TEXT = centerEnvironmentEl?.textContent ?? "Surface co
 const DEFAULT_ASTEROID_META =
     asteroidMeta?.textContent ?? "Search NASA's Near-Earth Object catalog to auto-fill impact parameters.";
 const DEFAULT_MAP_VIEW = { center: [20, 0], zoom: 3 };
+const DAY_IN_MS = 86_400_000;
 
 const RESULT_FIELDS = [
     craterDiameterEl,
@@ -133,8 +136,11 @@ let impactMarker = null;
 let footprintLayer = null;
 let latestAsteroids = [];
 let selectedAsteroidId = null;
+let defaultAsteroidDateRange = null;
 const asteroidSearchState = {
     query: "",
+    startDate: "",
+    endDate: "",
     minDiameter: null,
     maxDiameter: null,
     composition: "",
@@ -837,13 +843,18 @@ function updateAsteroidSummary(payload) {
     if (!asteroidResultsSummary) return;
     const totalItems = Number(payload?.totalItems ?? asteroidSearchState.totalItems ?? latestAsteroids.length);
     const sourceLabel = payload?.source === "fallback" ? "offline dataset" : "NASA catalog";
+    const rangeStart = payload?.filters?.startDate ?? asteroidSearchState.startDate ?? "";
+    const rangeEnd = payload?.filters?.endDate ?? asteroidSearchState.endDate ?? "";
+    const dateRangeLabel = rangeStart ? formatAsteroidDateRangeLabel(rangeStart, rangeEnd) : null;
+    const usingDefaultRange = isUsingDefaultAsteroidRange();
     if (!latestAsteroids.length) {
         const hasFilters = Boolean(
             asteroidSearchState.query ||
                 asteroidSearchState.minDiameter ||
                 asteroidSearchState.maxDiameter ||
                 asteroidSearchState.composition ||
-                asteroidSearchState.hazardousOnly
+                asteroidSearchState.hazardousOnly ||
+                (!usingDefaultRange && (asteroidSearchState.startDate || asteroidSearchState.endDate))
         );
         asteroidResultsSummary.textContent = hasFilters
             ? "No asteroids matched your filters. Adjust the search criteria and try again."
@@ -859,6 +870,9 @@ function updateAsteroidSummary(payload) {
         : `Page ${pageNumber}`;
 
     const details = [`Showing ${shown.toLocaleString()} of ${totalItems.toLocaleString()} objects`, pageInfo, `Source: ${sourceLabel}`];
+    if (dateRangeLabel) {
+        details.splice(1, 0, dateRangeLabel);
+    }
     asteroidResultsSummary.textContent = details.join(" • ");
 }
 
@@ -998,6 +1012,8 @@ function applyAsteroidPresetFromData(asteroid) {
 
 function readAsteroidSearchForm() {
     asteroidSearchState.query = asteroidQueryInput?.value.trim() ?? "";
+    asteroidSearchState.startDate = sanitizeDateInput(asteroidStartDateInput?.value ?? "");
+    asteroidSearchState.endDate = sanitizeDateInput(asteroidEndDateInput?.value ?? "");
     asteroidSearchState.minDiameter = readNumberFromInput(asteroidMinDiameterInput);
     asteroidSearchState.maxDiameter = readNumberFromInput(asteroidMaxDiameterInput);
     asteroidSearchState.composition = asteroidCompositionSelect?.value ?? "";
@@ -1011,6 +1027,40 @@ function readNumberFromInput(input) {
     if (!input) return null;
     const value = Number(input.value);
     return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function sanitizeDateInput(value) {
+    if (!value) return "";
+    const trimmed = String(value).trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : "";
+}
+
+function formatDateForInput(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return "";
+    }
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(date.getUTCDate()).padStart(2, "0");
+    return `${date.getUTCFullYear()}-${month}-${day}`;
+}
+
+function computeDefaultAsteroidDateRange() {
+    const end = new Date();
+    const start = new Date(end.getTime() - 6 * DAY_IN_MS);
+    return {
+        start: formatDateForInput(start),
+        end: formatDateForInput(end)
+    };
+}
+
+function isUsingDefaultAsteroidRange() {
+    if (!defaultAsteroidDateRange) {
+        return false;
+    }
+    return (
+        asteroidSearchState.startDate === defaultAsteroidDateRange.start &&
+        asteroidSearchState.endDate === defaultAsteroidDateRange.end
+    );
 }
 
 async function fetchAsteroidCatalog({ append = false } = {}) {
@@ -1034,6 +1084,8 @@ async function fetchAsteroidCatalog({ append = false } = {}) {
     params.set("page", String(page));
     params.set("size", String(asteroidSearchState.pageSize));
     if (asteroidSearchState.query) params.set("q", asteroidSearchState.query);
+    if (asteroidSearchState.startDate) params.set("startDate", asteroidSearchState.startDate);
+    if (asteroidSearchState.endDate) params.set("endDate", asteroidSearchState.endDate);
     if (asteroidSearchState.minDiameter != null) params.set("minDiameter", String(asteroidSearchState.minDiameter));
     if (asteroidSearchState.maxDiameter != null) params.set("maxDiameter", String(asteroidSearchState.maxDiameter));
     if (asteroidSearchState.composition) params.set("composition", asteroidSearchState.composition);
@@ -1043,6 +1095,23 @@ async function fetchAsteroidCatalog({ append = false } = {}) {
         const response = await fetch(`/api/asteroids/search?${params.toString()}`);
         if (!response.ok) throw new Error("Failed to query asteroid catalog");
         const payload = await response.json();
+
+        if (payload?.filters) {
+            const normalizedStart = sanitizeDateInput(payload.filters.startDate);
+            const normalizedEnd = sanitizeDateInput(payload.filters.endDate);
+            if (normalizedStart) {
+                asteroidSearchState.startDate = normalizedStart;
+                if (!append && asteroidStartDateInput) {
+                    asteroidStartDateInput.value = normalizedStart;
+                }
+            }
+            if (normalizedEnd) {
+                asteroidSearchState.endDate = normalizedEnd;
+                if (!append && asteroidEndDateInput) {
+                    asteroidEndDateInput.value = normalizedEnd;
+                }
+            }
+        }
 
         const asteroids = Array.isArray(payload?.asteroids) ? payload.asteroids : [];
         latestAsteroids = append ? [...latestAsteroids, ...asteroids] : asteroids;
@@ -1101,12 +1170,17 @@ async function fetchAsteroidCatalog({ append = false } = {}) {
 
 function resetAsteroidSearch() {
     if (asteroidQueryInput) asteroidQueryInput.value = "";
+    defaultAsteroidDateRange = computeDefaultAsteroidDateRange();
+    if (asteroidStartDateInput) asteroidStartDateInput.value = defaultAsteroidDateRange.start;
+    if (asteroidEndDateInput) asteroidEndDateInput.value = defaultAsteroidDateRange.end;
     if (asteroidMinDiameterInput) asteroidMinDiameterInput.value = "";
     if (asteroidMaxDiameterInput) asteroidMaxDiameterInput.value = "";
     if (asteroidCompositionSelect) asteroidCompositionSelect.value = "";
     if (asteroidHazardCheckbox) asteroidHazardCheckbox.checked = false;
 
     asteroidSearchState.query = "";
+    asteroidSearchState.startDate = defaultAsteroidDateRange.start;
+    asteroidSearchState.endDate = defaultAsteroidDateRange.end;
     asteroidSearchState.minDiameter = null;
     asteroidSearchState.maxDiameter = null;
     asteroidSearchState.composition = "";
@@ -1301,6 +1375,28 @@ function formatAsteroidVelocity(velocity) {
         return "--";
     }
     return `${value.toFixed(1)} km/s`;
+}
+
+function formatAsteroidDateRangeLabel(start, end) {
+    if (!start) {
+        return null;
+    }
+    try {
+        const formatter = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" });
+        const startDate = new Date(`${start}T00:00:00Z`);
+        const startLabel = Number.isNaN(startDate.getTime()) ? start : formatter.format(startDate);
+        if (!end || end === start) {
+            return `Window: ${startLabel}`;
+        }
+        const endDate = new Date(`${end}T00:00:00Z`);
+        const endLabel = Number.isNaN(endDate.getTime()) ? end : formatter.format(endDate);
+        return `Window: ${startLabel} – ${endLabel}`;
+    } catch (error) {
+        if (end && end !== start) {
+            return `Window: ${start} – ${end}`;
+        }
+        return `Window: ${start}`;
+    }
 }
 
 function formatApproachDate(date) {
