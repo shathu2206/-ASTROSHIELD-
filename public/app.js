@@ -1063,6 +1063,26 @@ function isUsingDefaultAsteroidRange() {
     );
 }
 
+async function fetchOfflineAsteroidCatalog() {
+    try {
+        const response = await fetch("/api/asteroids/offline");
+        if (!response.ok) {
+            throw new Error(`Offline catalog request failed with status ${response.status}`);
+        }
+        const payload = await response.json();
+        const asteroids = Array.isArray(payload?.asteroids) ? payload.asteroids : [];
+        return {
+            asteroids,
+            summary: payload?.summary ?? "Loaded offline asteroid catalog.",
+            totalItems: Number(payload?.totalItems ?? asteroids.length) || asteroids.length,
+            source: payload?.source ?? "fallback"
+        };
+    } catch (offlineError) {
+        console.error("Offline asteroid catalog unavailable.", offlineError);
+        return null;
+    }
+}
+
 async function fetchAsteroidCatalog({ append = false } = {}) {
     if (asteroidSearchState.loading) return;
 
@@ -1150,6 +1170,37 @@ async function fetchAsteroidCatalog({ append = false } = {}) {
     } catch (error) {
         console.error(error);
         if (!append) {
+            const offlineCatalog = await fetchOfflineAsteroidCatalog();
+            if (offlineCatalog) {
+                latestAsteroids = offlineCatalog.asteroids;
+                asteroidSearchState.page = latestAsteroids.length ? 1 : 0;
+                asteroidSearchState.hasMore = false;
+                asteroidSearchState.totalItems = offlineCatalog.totalItems;
+                asteroidSearchState.source = offlineCatalog.source;
+                renderAsteroidResults();
+                updateAsteroidSummary({
+                    totalItems: offlineCatalog.totalItems,
+                    source: offlineCatalog.source,
+                    page: 0,
+                    totalPages: 1,
+                    hasMore: false,
+                    filters: {
+                        startDate: asteroidSearchState.startDate,
+                        endDate: asteroidSearchState.endDate
+                    }
+                });
+                if (asteroidMeta) {
+                    asteroidMeta.textContent = offlineCatalog.summary;
+                }
+                if (asteroidLoadMoreBtn) {
+                    asteroidLoadMoreBtn.textContent = "Load more objects";
+                    asteroidLoadMoreBtn.disabled = true;
+                    asteroidLoadMoreBtn.hidden = true;
+                }
+                asteroidSearchState.loading = false;
+                return;
+            }
+
             latestAsteroids = [];
             renderAsteroidResults();
         }

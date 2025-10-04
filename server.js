@@ -1127,6 +1127,19 @@ app.get("/api/asteroids", async (_req, res) => {
     }
 });
 
+app.get("/api/asteroids/offline", (_req, res) => {
+    res.json({
+        asteroids: FALLBACK_ASTEROID_RECORDS,
+        page: 0,
+        pageSize: FALLBACK_ASTEROID_RECORDS.length,
+        totalPages: 1,
+        totalItems: FALLBACK_ASTEROID_RECORDS.length,
+        hasMore: false,
+        summary: `Loaded offline asteroid presets (${FALLBACK_ASTEROID_RECORDS.length} objects).`,
+        source: "fallback"
+    });
+});
+
 
 
 app.post("/api/simulate", async (req, res) => {
