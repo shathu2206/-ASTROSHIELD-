@@ -688,38 +688,33 @@ async function loadGeology() {
 }
 
 function shouldShowMarineContext(geology) {
-<<<<<<< ours
-    if (!geology?.ocean) {
-        return false;
-    }
-    const depth = Number(geology.ocean.depthMeters);
-    const hasDepth = Number.isFinite(depth);
-    const depthSuggestsLand = hasDepth && depth < 0;
-    const selectedTerrain = terrainSelect?.value;
-    if (selectedTerrain === "water") {
-        return !depthSuggestsLand || !hasDepth;
-    }
-    if (!selectedTerrain) {
-        return !depthSuggestsLand;
-    }
-    return false;
-=======
     if (!geology) {
         return false;
     }
 
+    const ocean = geology.ocean;
+    const depth = Number(ocean?.depthMeters);
+    const hasDepth = Number.isFinite(depth);
+    const depthSuggestsLand = hasDepth && depth < 0;
     const selectedTerrain = terrainSelect?.value;
+
     if (selectedTerrain === "water") {
+        // Assume marine context unless depth data indicates the location is above sea level.
+        if (depthSuggestsLand) {
+            return false;
+        }
         return true;
+    }
+
+    if (!selectedTerrain && depthSuggestsLand) {
+        return false;
     }
 
     const waterBody = geology.waterBody;
-    const marineWaterBody = typeof waterBody === "string" && /\b(ocean|sea)\b/i.test(waterBody);
-    if (marineWaterBody) {
+    if (typeof waterBody === "string" && /\b(ocean|sea)\b/i.test(waterBody)) {
         return true;
     }
 
-    const ocean = geology.ocean;
     if (!ocean) {
         return false;
     }
@@ -729,15 +724,18 @@ function shouldShowMarineContext(geology) {
         return elevation <= 0;
     }
 
-    const depth = Number(ocean.depthMeters);
-    return Number.isFinite(depth) && depth >= 0;
->>>>>>> theirs
+    if (hasDepth) {
+        return depth >= 0;
+    }
+
+    return false;
 }
 
 function buildGeologyPopup(geology) {
     if (!geology) {
         return "<strong>Location selected</strong><br>No surface data available.";
     }
+    const marineContext = shouldShowMarineContext(geology);
     const parts = [];
     if (geology.label) {
         parts.push(`<strong>${escapeHtml(geology.label)}</strong>`);
@@ -763,34 +761,26 @@ function buildGeologyPopup(geology) {
         }
     }
     const ocean = geology.ocean;
-<<<<<<< ours
-    if (marineContext && ocean) {
-        if (geology.waterBody) {
-            parts.push(`Water body: ${escapeHtml(geology.waterBody)}`);
-        }
-        if (Number.isFinite(ocean.depthMeters)) {
-=======
     if (marineContext) {
         if (geology.waterBody) {
             parts.push(`Water body: ${escapeHtml(geology.waterBody)}`);
         }
         if (ocean && Number.isFinite(ocean.depthMeters)) {
->>>>>>> theirs
             const depthLabel = ocean.depthMeters > 0
                 ? `${Math.round(ocean.depthMeters)} m below mean sea level`
                 : `${Math.abs(Math.round(ocean.depthMeters))} m above mean sea level`;
             parts.push(`Depth: ${escapeHtml(depthLabel)}`);
         }
-        if (Number.isFinite(ocean.waveHeightMeters)) {
+        if (Number.isFinite(ocean?.waveHeightMeters)) {
             parts.push(`Significant wave height: ${ocean.waveHeightMeters.toFixed(1)} m`);
         }
-        if (Number.isFinite(ocean.surfaceTemperatureC)) {
+        if (Number.isFinite(ocean?.surfaceTemperatureC)) {
             parts.push(`Sea surface temperature: ${ocean.surfaceTemperatureC.toFixed(1)} °C`);
         }
-        if (Number.isFinite(ocean.wavePeriodSeconds)) {
+        if (Number.isFinite(ocean?.wavePeriodSeconds)) {
             parts.push(`Wave period: ${ocean.wavePeriodSeconds.toFixed(0)} s`);
         }
-        if (ocean.source) {
+        if (ocean?.source) {
             parts.push(`<span class="source">Marine data: ${escapeHtml(ocean.source)}</span>`);
         }
     }
