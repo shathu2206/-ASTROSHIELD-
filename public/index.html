@@ -32,53 +32,12 @@
                 <p>Model an impact, explore multi-hazard footprints, and estimate casualties with live datasets.</p>
             </header>
 
-            <section class="card" id="neo-feed">
-                <h2>Near-Earth Object Feed</h2>
-                <div class="neo-controls">
-                    <label class="field">
-                        <span>Start date</span>
-                        <div class="input">
-                            <input type="date" id="neo-start-date" name="neo-start-date" />
-                        </div>
-                    </label>
-                    <label class="field">
-                        <span>End date</span>
-                        <div class="input">
-                            <input type="date" id="neo-end-date" name="neo-end-date" />
-                        </div>
-                    </label>
-                </div>
-                <div class="neo-actions">
-                    <button type="button" id="neo-load" class="primary">Load Asteroids</button>
-                    <span id="neo-status" class="neo-status muted" role="status" aria-live="polite"
-                        >Choose a date range (up to seven days) to query NASA's NeoWs feed.</span
-                    >
-                </div>
-                <div class="neo-table-wrapper" role="region" aria-live="polite" aria-label="Near-Earth object results">
-                    <table id="neo-table" class="neo-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">Date</th>
-                                <th scope="col">Name</th>
-                                <th scope="col">ID</th>
-                                <th scope="col">Hazardous</th>
-                                <th scope="col">Abs. Mag</th>
-                                <th scope="col">Close approach</th>
-                                <th scope="col">Velocity</th>
-                                <th scope="col">Miss distance</th>
-                            </tr>
-                        </thead>
-                        <tbody id="neo-table-body">
-                            <tr class="empty">
-                                <td colspan="8">No asteroid data loaded yet.</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
             <section class="card" id="asteroid-catalog">
-                <h2>Asteroid Catalog</h2>
+                <h2>Asteroid Finder</h2>
+                <p class="card-subtitle">
+                    Browse upcoming near-Earth approaches by name, date, size, or hazard filters. Leave everything blank to
+                    see NASA's next seven days of activity.
+                </p>
                 <form id="asteroid-search-form" class="asteroid-search" autocomplete="off">
                     <label class="field">
                         <span>Search catalog</span>
@@ -136,13 +95,17 @@
                         </div>
                     </div>
                     <div class="form-actions asteroid-search-actions">
-                        <button type="submit" class="primary">Search catalog</button>
+                        <button type="submit" class="primary">Search asteroids</button>
                         <button type="button" id="asteroid-reset" class="secondary">Reset filters</button>
                     </div>
                 </form>
-                <p class="asteroid-meta" id="asteroid-meta">Search NASA's Near-Earth Object catalog to auto-fill impact parameters.</p>
+                <p class="asteroid-meta" id="asteroid-meta">
+                    Data courtesy of NASA's Near-Earth Object Program. Choose an asteroid to fill in the simulator automatically.
+                </p>
                 <div class="asteroid-results-wrapper">
-                    <p id="asteroid-results-summary" class="asteroid-summary muted">No results yet. Submit a search to explore asteroids.</p>
+                    <p id="asteroid-results-summary" class="asteroid-summary muted">
+                        Use the filters to explore upcoming near-Earth objects or press search to see the next seven days.
+                    </p>
                     <ul id="asteroid-results" class="asteroid-results" aria-live="polite"></ul>
                     <button type="button" id="asteroid-load-more" class="secondary asteroid-load-more" hidden>Load more objects</button>
                 </div>

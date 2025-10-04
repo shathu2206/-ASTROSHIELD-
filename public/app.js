@@ -28,11 +28,6 @@ const asteroidCompositionSelect = document.getElementById("asteroid-composition"
 const asteroidHazardCheckbox = document.getElementById("asteroid-hazard");
 const asteroidLoadMoreBtn = document.getElementById("asteroid-load-more");
 const asteroidResetBtn = document.getElementById("asteroid-reset");
-const neoStartDateInput = document.getElementById("neo-start-date");
-const neoEndDateInput = document.getElementById("neo-end-date");
-const neoLoadButton = document.getElementById("neo-load");
-const neoStatusEl = document.getElementById("neo-status");
-const neoTableBody = document.getElementById("neo-table-body");
 const resultsCard = document.querySelector(".results-card");
 const locationForm = document.getElementById("location-form");
 const locationInput = document.getElementById("location-query");
@@ -66,7 +61,8 @@ const DEFAULT_COORDINATE_TEXT = centerCoordinatesEl?.textContent ?? "No impact l
 const DEFAULT_COORDINATE_LABEL = centerLabelEl?.textContent ?? "";
 const DEFAULT_ENVIRONMENT_TEXT = centerEnvironmentEl?.textContent ?? "Surface context unavailable.";
 const DEFAULT_ASTEROID_META =
-    asteroidMeta?.textContent ?? "Search NASA's Near-Earth Object catalog to auto-fill impact parameters.";
+    asteroidMeta?.textContent ??
+    "Data courtesy of NASA's Near-Earth Object Program. Choose an asteroid to fill in the simulator automatically.";
 const DEFAULT_MAP_VIEW = { center: [20, 0], zoom: 3 };
 const DAY_IN_MS = 86_400_000;
 const NEO_FEED_MAX_RANGE_DAYS = 7;
@@ -136,330 +132,9 @@ const SIZE_REFERENCES = [
     { size: 77000, label: "the width of Rhode Island (~77 km)" }
 ];
 
-function formatDateInputValue(date) {
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
-        return "";
-    }
-    return date.toISOString().slice(0, 10);
-}
-
 function toFiniteNumber(value) {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : null;
-}
-
-function formatNeoDate(value) {
-    if (!value) return "--";
-    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        return value;
-    }
-    const parsed = new Date(value);
-    if (!Number.isNaN(parsed.getTime())) {
-        return parsed.toISOString().slice(0, 10);
-    }
-    return String(value);
-}
-
-function formatNeoApproach(value) {
-    if (!value) return "--";
-    const parsed = new Date(value);
-    if (!Number.isNaN(parsed.getTime())) {
-        const iso = parsed.toISOString();
-        return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
-    }
-    return String(value);
-}
-
-function formatNeoMagnitude(value) {
-    const numeric = toFiniteNumber(value);
-    return numeric == null ? "--" : numeric.toFixed(1);
-}
-
-function formatNeoVelocity(value) {
-    const numeric = toFiniteNumber(value);
-    return numeric == null
-        ? "--"
-        : `${numeric.toLocaleString(undefined, { maximumFractionDigits: 2 })} km/s`;
-}
-
-function formatNeoDistance(value) {
-    const numeric = toFiniteNumber(value);
-    return numeric == null
-        ? "--"
-        : `${numeric.toLocaleString(undefined, { maximumFractionDigits: 0 })} km`;
-}
-
-const NEO_STATUS_VARIANTS = ["info", "success", "warning", "error"];
-
-function setNeoStatus(message, variant = "info") {
-    if (!neoStatusEl) return;
-    const normalizedMessage = message ?? "";
-    neoStatusEl.textContent = normalizedMessage;
-    neoStatusEl.classList.remove("muted", ...NEO_STATUS_VARIANTS.map((value) => `neo-status-${value}`));
-    if (!normalizedMessage) {
-        neoStatusEl.classList.add("muted");
-        return;
-    }
-    const variantClass = NEO_STATUS_VARIANTS.includes(variant) ? `neo-status-${variant}` : "neo-status-info";
-    neoStatusEl.classList.add(variantClass);
-    if (variant === "info") {
-        neoStatusEl.classList.add("muted");
-    }
-}
-
-function enforceNeoDateBounds() {
-    if (!neoStartDateInput || !neoEndDateInput) return;
-    if (neoStartDateInput.value) {
-        neoEndDateInput.min = neoStartDateInput.value;
-        const startDate = new Date(`${neoStartDateInput.value}T00:00:00Z`);
-        const maxDate = new Date(startDate.getTime() + (NEO_FEED_MAX_RANGE_DAYS - 1) * DAY_IN_MS);
-        const maxValue = formatDateInputValue(maxDate);
-        if (maxValue) {
-            neoEndDateInput.max = maxValue;
-            if (neoEndDateInput.value && neoEndDateInput.value > maxValue) {
-                neoEndDateInput.value = maxValue;
-            }
-        }
-    } else {
-        neoEndDateInput.removeAttribute("min");
-        neoEndDateInput.removeAttribute("max");
-    }
-}
-
-function renderNeoTable(records) {
-    if (!neoTableBody) return;
-    neoTableBody.innerHTML = "";
-    const entries = Array.isArray(records) ? records : [];
-    if (entries.length === 0) {
-        const row = document.createElement("tr");
-        row.className = "empty";
-        const cell = document.createElement("td");
-        cell.colSpan = 8;
-        cell.textContent = "No near-Earth objects found for the selected range.";
-        row.appendChild(cell);
-        neoTableBody.appendChild(row);
-        return;
-    }
-
-    for (const entry of entries) {
-        const row = document.createElement("tr");
-
-        const dateCell = document.createElement("td");
-        dateCell.textContent = formatNeoDate(entry?.date);
-        row.appendChild(dateCell);
-
-        const nameCell = document.createElement("td");
-        if (entry?.nasaJplUrl) {
-            const link = document.createElement("a");
-            link.href = entry.nasaJplUrl;
-            link.textContent = entry?.name ?? "Unknown object";
-            link.target = "_blank";
-            link.rel = "noopener";
-            nameCell.appendChild(link);
-        } else {
-            nameCell.textContent = entry?.name ?? "Unknown object";
-        }
-        row.appendChild(nameCell);
-
-        const idCell = document.createElement("td");
-        idCell.textContent = entry?.id ?? "--";
-        row.appendChild(idCell);
-
-        const hazardCell = document.createElement("td");
-        const hazardBadge = document.createElement("span");
-        hazardBadge.className = `neo-badge ${entry?.hazardous ? "neo-badge-risk" : "neo-badge-safe"}`;
-        hazardBadge.textContent = entry?.hazardous ? "Yes" : "No";
-        hazardCell.appendChild(hazardBadge);
-        row.appendChild(hazardCell);
-
-        const magnitudeCell = document.createElement("td");
-        magnitudeCell.textContent = formatNeoMagnitude(entry?.absoluteMagnitude);
-        row.appendChild(magnitudeCell);
-
-        const approachCell = document.createElement("td");
-        approachCell.textContent = formatNeoApproach(entry?.closeApproachDate);
-        row.appendChild(approachCell);
-
-        const velocityCell = document.createElement("td");
-        velocityCell.textContent = formatNeoVelocity(entry?.relativeVelocityKps);
-        row.appendChild(velocityCell);
-
-        const missCell = document.createElement("td");
-        missCell.textContent = formatNeoDistance(entry?.missDistanceKm);
-        row.appendChild(missCell);
-
-        neoTableBody.appendChild(row);
-    }
-}
-
-async function fetchNeoJson(url) {
-    const response = await fetch(url);
-    const text = await response.text();
-    let payload = null;
-    try {
-        payload = text ? JSON.parse(text) : {};
-    } catch {
-        payload = text;
-    }
-
-    if (!response.ok) {
-        const message =
-            (payload && typeof payload === "object" && (payload.error || payload.message || payload.details)) ||
-            (typeof payload === "string" && payload) ||
-            `Request failed with status ${response.status}`;
-        throw new Error(message);
-    }
-
-    return payload && typeof payload === "object" ? payload : {};
-}
-
-async function loadNeoFeedRange(start, end) {
-    const params = new URLSearchParams({ start });
-    if (end) {
-        params.set("end", end);
-    }
-    return fetchNeoJson(`/api/neo-feed?${params.toString()}`);
-}
-
-async function loadNeoFallback() {
-    return fetchNeoJson("/api/neo-fallback");
-}
-
-async function handleNeoLoadClick() {
-    if (!neoStartDateInput || !neoEndDateInput || !neoLoadButton) return;
-
-    const startValue = neoStartDateInput.value;
-    const endValue = neoEndDateInput.value || startValue;
-
-    if (!startValue) {
-        setNeoStatus("Choose a valid start date before loading asteroids.", "error");
-        neoStartDateInput.focus();
-        return;
-    }
-
-    const startDate = new Date(`${startValue}T00:00:00Z`);
-    const endDate = new Date(`${endValue}T00:00:00Z`);
-
-    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-        setNeoStatus("Enter valid calendar dates in YYYY-MM-DD format.", "error");
-        return;
-    }
-
-    if (endDate < startDate) {
-        setNeoStatus("End date cannot be earlier than the start date.", "error");
-        neoEndDateInput.focus();
-        return;
-    }
-
-    if (endDate.getTime() - startDate.getTime() > (NEO_FEED_MAX_RANGE_DAYS - 1) * DAY_IN_MS) {
-        setNeoStatus("Limit the range to seven days or fewer.", "error");
-        neoEndDateInput.focus();
-        return;
-    }
-
-    setNeoStatus("Loading near-Earth objects from NASA...", "info");
-    neoLoadButton.disabled = true;
-    neoLoadButton.setAttribute("aria-busy", "true");
-
-    try {
-        const payload = await loadNeoFeedRange(startValue, endValue);
-        const asteroids = Array.isArray(payload?.asteroids) ? payload.asteroids : [];
-        renderNeoTable(asteroids);
-
-        const endLabel = endValue || startValue;
-        if (payload?.source === "fallback") {
-            const warning = payload?.warning ||
-                `NASA feed unavailable for ${startValue}${endLabel && endLabel !== startValue ? ` → ${endLabel}` : ""}.`;
-            if (asteroids.length === 0) {
-                setNeoStatus(`${warning} No offline asteroids available.`, "warning");
-            } else {
-                setNeoStatus(
-                    `${warning} Displaying ${asteroids.length.toLocaleString()} mission archive object${
-                        asteroids.length === 1 ? "" : "s"
-                    }.`,
-                    "warning"
-                );
-            }
-            return;
-        }
-
-        if (asteroids.length === 0) {
-            setNeoStatus("No near-Earth objects reported for that range.", "info");
-        } else {
-            setNeoStatus(
-                `Loaded ${asteroids.length.toLocaleString()} object${asteroids.length === 1 ? "" : "s"} from NASA (${startValue} → ${endLabel}).`,
-                "success"
-            );
-        }
-    } catch (error) {
-        console.warn("NASA feed failed, loading fallback data", error);
-        try {
-            const fallback = await loadNeoFallback();
-            const fallbackAsteroids = Array.isArray(fallback?.asteroids) ? fallback.asteroids : [];
-            renderNeoTable(fallbackAsteroids);
-            if (fallbackAsteroids.length === 0) {
-                setNeoStatus(
-                    "Mission Control cannot reach NASA and no offline asteroids were found. Check your connection or set NASA_API_KEY in .env.",
-                    "warning"
-                );
-            } else {
-                setNeoStatus(
-                    `Mission Control is using the offline asteroid archive (${fallbackAsteroids.length.toLocaleString()} object${
-                        fallbackAsteroids.length === 1 ? "" : "s"
-                    }). Verify connectivity or NASA_API_KEY to restore live data.`,
-                    "warning"
-                );
-            }
-        } catch (fallbackError) {
-            console.error("Fallback asteroid load failed", fallbackError);
-            renderNeoTable([]);
-            setNeoStatus("Unable to load asteroid data. Please try again later.", "error");
-        }
-    } finally {
-        neoLoadButton.disabled = false;
-        neoLoadButton.removeAttribute("aria-busy");
-    }
-}
-
-function initializeNeoFeedControls() {
-    if (!neoStartDateInput || !neoEndDateInput || !neoLoadButton) return;
-
-    if (!neoStartDateInput.value) {
-        const today = new Date();
-        neoStartDateInput.value = formatDateInputValue(today);
-    }
-
-    if (!neoEndDateInput.value) {
-        const today = neoStartDateInput.value
-            ? new Date(`${neoStartDateInput.value}T00:00:00Z`)
-            : new Date();
-        const endDate = new Date(today.getTime() + 2 * DAY_IN_MS);
-        neoEndDateInput.value = formatDateInputValue(endDate);
-    }
-
-    enforceNeoDateBounds();
-
-    neoStartDateInput.addEventListener("change", () => {
-        if (neoEndDateInput && (!neoEndDateInput.value || neoEndDateInput.value < neoStartDateInput.value)) {
-            neoEndDateInput.value = neoStartDateInput.value;
-        }
-        enforceNeoDateBounds();
-    });
-
-    neoEndDateInput.addEventListener("change", () => {
-        enforceNeoDateBounds();
-    });
-
-    neoLoadButton.addEventListener("click", () => {
-        handleNeoLoadClick();
-    });
-
-    if (!neoFeedInitialized) {
-        neoFeedInitialized = true;
-        window.requestAnimationFrame(() => {
-            handleNeoLoadClick();
-        });
-    }
 }
 
 let latestGeology = null;
@@ -487,7 +162,6 @@ const asteroidSearchState = {
 let selectedLocation = null;
 let populationAbortController = null;
 let mapStatusTimer = null;
-let neoFeedInitialized = false;
 
 function formatCoordinate(lat, lng) {
     const degreeSymbol = "\u00B0";
@@ -1222,7 +896,6 @@ function resetAsteroidResults() {
 function updateAsteroidSummary(payload) {
     if (!asteroidResultsSummary) return;
     const totalItems = Number(payload?.totalItems ?? asteroidSearchState.totalItems ?? latestAsteroids.length);
-    const sourceLabel = payload?.source === "fallback" ? "offline dataset" : "NASA catalog";
     const rangeStart = payload?.filters?.startDate ?? asteroidSearchState.startDate ?? "";
     const rangeEnd = payload?.filters?.endDate ?? asteroidSearchState.endDate ?? "";
     const dateRangeLabel = rangeStart ? formatAsteroidDateRangeLabel(rangeStart, rangeEnd) : null;
@@ -1237,23 +910,60 @@ function updateAsteroidSummary(payload) {
                 (!usingDefaultRange && (asteroidSearchState.startDate || asteroidSearchState.endDate))
         );
         asteroidResultsSummary.textContent = hasFilters
-            ? "No asteroids matched your filters. Adjust the search criteria and try again."
-            : "No asteroids available yet. Try refreshing the catalog.";
+            ? "No asteroids matched your filters. Try widening the search window or clearing some filters."
+            : "No asteroids available yet. Try again shortly or expand the date window.";
         return;
     }
 
     const shown = latestAsteroids.length;
-    const pageNumber = Number(payload?.page ?? asteroidSearchState.page - 1) + 1;
-    const totalPages = Number(payload?.totalPages ?? 0);
-    const pageInfo = payload?.hasMore || asteroidSearchState.hasMore
-        ? `Page ${pageNumber} of ${totalPages || "?"}`
-        : `Page ${pageNumber}`;
+    const countLabel =
+        totalItems && shown < totalItems
+            ? `Showing ${shown.toLocaleString()} of ${totalItems.toLocaleString()} near-Earth objects`
+            : `Showing ${shown.toLocaleString()} near-Earth object${shown === 1 ? "" : "s"}`;
 
-    const details = [`Showing ${shown.toLocaleString()} of ${totalItems.toLocaleString()} objects`, pageInfo, `Source: ${sourceLabel}`];
+    const highlights = [countLabel];
+
     if (dateRangeLabel) {
-        details.splice(1, 0, dateRangeLabel);
+        highlights.unshift(dateRangeLabel);
     }
-    asteroidResultsSummary.textContent = details.join(" • ");
+
+    const filterHighlights = [];
+    if (asteroidSearchState.query) {
+        filterHighlights.push(`matching “${asteroidSearchState.query}”`);
+    }
+    if (asteroidSearchState.hazardousOnly) {
+        filterHighlights.push("potentially hazardous only");
+    }
+    if (asteroidSearchState.minDiameter != null) {
+        filterHighlights.push(`min ${Math.round(asteroidSearchState.minDiameter)} m`);
+    }
+    if (asteroidSearchState.maxDiameter != null) {
+        filterHighlights.push(`max ${Math.round(asteroidSearchState.maxDiameter)} m`);
+    }
+    if (asteroidSearchState.composition) {
+        filterHighlights.push(`composition ${getCompositionLabel(asteroidSearchState.composition)}`);
+    }
+    if (filterHighlights.length > 0) {
+        const filterSummary = `Filters: ${filterHighlights.join(", ")}`;
+        if (dateRangeLabel) {
+            highlights.splice(1, 0, filterSummary);
+        } else {
+            highlights.unshift(filterSummary);
+        }
+    }
+
+    const currentPage = Number.isFinite(Number(payload?.page)) ? Number(payload?.page) + 1 : asteroidSearchState.page;
+    if (currentPage > 1 || asteroidSearchState.hasMore || payload?.hasMore) {
+        highlights.push(`Page ${currentPage}`);
+    }
+
+    const sourceMessage =
+        payload?.source === "fallback"
+            ? "Offline sample data while NASA's feed is unavailable"
+            : "Data from NASA's Near-Earth Object program";
+    highlights.push(sourceMessage);
+
+    asteroidResultsSummary.textContent = highlights.join(" • ");
 }
 
 function renderAsteroidResults() {
@@ -1281,29 +991,60 @@ function renderAsteroidResults() {
 
         const title = document.createElement("div");
         title.className = "asteroid-result-title";
-        const designation = asteroid.designation ? ` (${asteroid.designation})` : "";
-        title.textContent = `${asteroid.name ?? "Unnamed object"}${designation}`;
+        const displayName = asteroid?.name ?? asteroid?.officialName ?? asteroid?.designation ?? "Unnamed object";
+        title.textContent = displayName;
         item.appendChild(title);
+
+        const officialLabel =
+            asteroid?.officialName && asteroid.officialName !== displayName ? asteroid.officialName : null;
+        const designationLabel =
+            asteroid?.designation &&
+            asteroid.designation !== displayName &&
+            (!officialLabel || !officialLabel.includes(asteroid.designation))
+                ? asteroid.designation
+                : null;
+
+        if (officialLabel || designationLabel) {
+            const subtitle = document.createElement("div");
+            subtitle.className = "asteroid-result-subtitle";
+            const subtitleParts = [];
+            if (officialLabel) subtitleParts.push(`Official: ${officialLabel}`);
+            if (designationLabel) subtitleParts.push(`Designation ${designationLabel}`);
+            subtitle.textContent = subtitleParts.join(" • ");
+            item.appendChild(subtitle);
+        }
 
         const meta = document.createElement("div");
         meta.className = "asteroid-result-meta";
 
         const sizeSpan = document.createElement("span");
-        sizeSpan.textContent = `Size: ${formatAsteroidDiameterRange(asteroid)}`;
+        sizeSpan.className = "asteroid-pill";
+        sizeSpan.textContent = `Size ${formatAsteroidDiameterRange(asteroid)}`;
         meta.appendChild(sizeSpan);
 
         const compositionSpan = document.createElement("span");
-        compositionSpan.textContent = `Composition: ${getCompositionLabel(asteroid.composition)}`;
+        compositionSpan.className = "asteroid-pill";
+        compositionSpan.textContent = `Composition ${getCompositionLabel(asteroid.composition)}`;
         meta.appendChild(compositionSpan);
 
         if (asteroid.velocity) {
             const velocitySpan = document.createElement("span");
-            velocitySpan.textContent = `Velocity: ${formatAsteroidVelocity(asteroid.velocity)}`;
+            velocitySpan.className = "asteroid-pill";
+            velocitySpan.textContent = `Speed ${formatAsteroidVelocity(asteroid.velocity)}`;
             meta.appendChild(velocitySpan);
         }
 
+        const distanceLabel = formatAsteroidMissDistance(asteroid);
+        if (distanceLabel) {
+            const distanceSpan = document.createElement("span");
+            distanceSpan.className = "asteroid-pill";
+            distanceSpan.textContent = `Distance ${distanceLabel}`;
+            meta.appendChild(distanceSpan);
+        }
+
         const hazardSpan = document.createElement("span");
-        hazardSpan.textContent = asteroid.hazardous ? "Potentially hazardous" : "Not flagged as hazardous";
+        hazardSpan.className = `asteroid-badge ${asteroid.hazardous ? "asteroid-badge-risk" : "asteroid-badge-safe"}`;
+        hazardSpan.textContent = asteroid.hazardous ? "Potential hazard" : "No known hazard";
         meta.appendChild(hazardSpan);
 
         item.appendChild(meta);
@@ -1313,11 +1054,7 @@ function renderAsteroidResults() {
 
         const approachInfo = document.createElement("span");
         approachInfo.className = "asteroid-result-approach";
-        const approachParts = [
-            `Last approach: ${formatApproachDate(asteroid.approachDate)}`,
-            asteroid.orbitClass ? `Orbit: ${asteroid.orbitClass}` : null
-        ].filter(Boolean);
-        approachInfo.textContent = approachParts.join(" • ") || "Orbit data unavailable";
+        approachInfo.textContent = formatAsteroidApproachSummary(asteroid);
         actions.appendChild(approachInfo);
 
         if (asteroid.nasaJplUrl) {
@@ -1326,14 +1063,14 @@ function renderAsteroidResults() {
             link.href = asteroid.nasaJplUrl;
             link.target = "_blank";
             link.rel = "noopener noreferrer";
-            link.textContent = "View on JPL";
+            link.textContent = "Mission details";
             actions.appendChild(link);
         }
 
         const button = document.createElement("button");
         button.type = "button";
         button.className = "asteroid-use";
-        button.textContent = "Load parameters";
+        button.textContent = "Load into simulator";
         button.addEventListener("click", () => {
             applyAsteroidPresetFromData(asteroid);
         });
@@ -1381,9 +1118,21 @@ function applyAsteroidPresetFromData(asteroid) {
         getCompositionLabel(asteroid.composition),
         asteroid.hazardous ? "potentially hazardous" : "not flagged as hazardous"
     ];
-    const designation = asteroid.designation ? ` (${asteroid.designation})` : "";
+    const displayName = asteroid?.name ?? asteroid?.officialName ?? "Unnamed object";
+    const subtitleParts = [];
+    if (asteroid?.officialName && asteroid.officialName !== displayName) {
+        subtitleParts.push(asteroid.officialName);
+    }
+    if (
+        asteroid?.designation &&
+        asteroid.designation !== displayName &&
+        (!asteroid.officialName || !asteroid.officialName.includes(asteroid.designation))
+    ) {
+        subtitleParts.push(`Designation ${asteroid.designation}`);
+    }
+    const header = subtitleParts.length ? `${displayName} (${subtitleParts.join(" • ")})` : displayName;
     if (asteroidMeta) {
-        asteroidMeta.textContent = `Loaded ${asteroid.name}${designation} • ${details.join(" • ")}`;
+        asteroidMeta.textContent = `Loaded ${header} • ${details.join(" • ")}`;
     }
 
     updateSizeComparison();
@@ -1425,12 +1174,38 @@ function formatDateForInput(date) {
 }
 
 function computeDefaultAsteroidDateRange() {
-    const end = new Date();
-    const start = new Date(end.getTime() - 6 * DAY_IN_MS);
+    const start = new Date();
+    start.setUTCHours(0, 0, 0, 0);
+    const end = new Date(start.getTime() + 6 * DAY_IN_MS);
     return {
         start: formatDateForInput(start),
         end: formatDateForInput(end)
     };
+}
+
+function enforceAsteroidDateBounds() {
+    if (!asteroidStartDateInput || !asteroidEndDateInput) return;
+    const startValue = sanitizeDateInput(asteroidStartDateInput.value);
+    if (startValue) {
+        asteroidEndDateInput.min = startValue;
+        const startDate = new Date(`${startValue}T00:00:00Z`);
+        if (!Number.isNaN(startDate.getTime())) {
+            const maxDate = new Date(startDate.getTime() + (NEO_FEED_MAX_RANGE_DAYS - 1) * DAY_IN_MS);
+            const maxValue = formatDateForInput(maxDate);
+            if (maxValue) {
+                asteroidEndDateInput.max = maxValue;
+                if (asteroidEndDateInput.value && asteroidEndDateInput.value > maxValue) {
+                    asteroidEndDateInput.value = maxValue;
+                }
+            }
+        }
+        if (asteroidEndDateInput.value && asteroidEndDateInput.value < startValue) {
+            asteroidEndDateInput.value = startValue;
+        }
+    } else {
+        asteroidEndDateInput.removeAttribute("min");
+        asteroidEndDateInput.removeAttribute("max");
+    }
 }
 
 function isUsingDefaultAsteroidRange() {
@@ -1531,10 +1306,11 @@ async function fetchAsteroidCatalog({ append = false } = {}) {
         updateAsteroidSummary(payload);
 
         if (asteroidMeta) {
-            asteroidMeta.textContent = payload?.summary ??
-                (payload?.source === "fallback"
-                    ? "Loaded offline asteroid catalog."
-                    : "Loaded asteroid sample from NASA's catalog.");
+            const metaMessage =
+                payload?.source === "fallback"
+                    ? "NASA's live feed is unavailable right now, so we're showing the bundled asteroid presets."
+                    : "Near-Earth object data courtesy of NASA's NeoWs program. Select a result to auto-fill the simulator.";
+            asteroidMeta.textContent = metaMessage;
         }
 
         if (asteroidLoadMoreBtn) {
@@ -1570,7 +1346,8 @@ async function fetchAsteroidCatalog({ append = false } = {}) {
                     }
                 });
                 if (asteroidMeta) {
-                    asteroidMeta.textContent = offlineCatalog.summary;
+                    asteroidMeta.textContent =
+                        "NASA's live feed is unavailable right now, so we're showing the bundled asteroid presets.";
                 }
                 if (asteroidLoadMoreBtn) {
                     asteroidLoadMoreBtn.textContent = "Load more objects";
@@ -1619,11 +1396,14 @@ function resetAsteroidSearch() {
     asteroidSearchState.page = 0;
     asteroidSearchState.hasMore = false;
     asteroidSearchState.totalItems = 0;
+    asteroidSearchState.source = null;
 
     selectedAsteroidId = null;
     resetAsteroidResults();
+    enforceAsteroidDateBounds();
     if (asteroidResultsSummary) {
-        asteroidResultsSummary.textContent = "No results yet. Submit a search to explore asteroids.";
+        asteroidResultsSummary.textContent =
+            "Use the filters to explore upcoming near-Earth objects or press search to see the next seven days.";
     }
     if (asteroidMeta) {
         asteroidMeta.textContent = DEFAULT_ASTEROID_META;
@@ -1637,7 +1417,6 @@ function resetAsteroidSearch() {
 
 function initializeAsteroidCatalog() {
     resetAsteroidSearch();
-    fetchAsteroidCatalog({ append: false });
 }
 
 async function geocode(query) {
@@ -1808,6 +1587,33 @@ function formatAsteroidVelocity(velocity) {
     return `${value.toFixed(1)} km/s`;
 }
 
+function formatAsteroidMissDistance(asteroid) {
+    if (!asteroid) return null;
+    const km = toFiniteNumber(asteroid?.approachMissDistanceKm);
+    const lunar = toFiniteNumber(asteroid?.approachMissDistanceLunar);
+    let distanceText = null;
+
+    if (km != null) {
+        if (km >= 1_000_000) {
+            const millions = km / 1_000_000;
+            const digits = millions >= 10 ? 0 : 1;
+            distanceText = `${millions.toFixed(digits)} million km`;
+        } else if (km >= 1_000) {
+            distanceText = `${km.toLocaleString(undefined, { maximumFractionDigits: 0 })} km`;
+        } else {
+            distanceText = `${Math.round(km)} km`;
+        }
+    }
+
+    if (lunar != null) {
+        const digits = lunar >= 10 ? 0 : 1;
+        const lunarLabel = `${lunar.toFixed(digits)} lunar distance${Math.abs(lunar - 1) < 1e-6 ? "" : "s"}`;
+        distanceText = distanceText ? `${distanceText} (${lunarLabel})` : lunarLabel;
+    }
+
+    return distanceText;
+}
+
 function formatAsteroidDateRangeLabel(start, end) {
     if (!start) {
         return null;
@@ -1817,16 +1623,16 @@ function formatAsteroidDateRangeLabel(start, end) {
         const startDate = new Date(`${start}T00:00:00Z`);
         const startLabel = Number.isNaN(startDate.getTime()) ? start : formatter.format(startDate);
         if (!end || end === start) {
-            return `Window: ${startLabel}`;
+            return `Approach window: ${startLabel}`;
         }
         const endDate = new Date(`${end}T00:00:00Z`);
         const endLabel = Number.isNaN(endDate.getTime()) ? end : formatter.format(endDate);
-        return `Window: ${startLabel} – ${endLabel}`;
+        return `Approach window: ${startLabel} – ${endLabel}`;
     } catch (error) {
         if (end && end !== start) {
-            return `Window: ${start} – ${end}`;
+            return `Approach window: ${start} – ${end}`;
         }
-        return `Window: ${start}`;
+        return `Approach window: ${start}`;
     }
 }
 
@@ -1843,6 +1649,40 @@ function formatApproachDate(date) {
     } catch (error) {
         return date;
     }
+}
+
+function formatAsteroidApproachSummary(asteroid) {
+    if (!asteroid) {
+        return "Approach data unavailable";
+    }
+    const approachDate = asteroid?.approachDate ?? asteroid?.approachDateIso ?? null;
+    const dateLabel = approachDate ? formatApproachDate(approachDate) : null;
+    const approachTime = approachDate ? Date.parse(approachDate) : Number.NaN;
+    const now = Date.now();
+    let prefix = "Close approach";
+    if (!approachDate || dateLabel === "No recent approach") {
+        prefix = "Close-approach timing unavailable";
+    } else if (!Number.isNaN(approachTime)) {
+        prefix = approachTime >= now ? "Next close approach" : "Recent close approach";
+    }
+
+    const distanceLabel = formatAsteroidMissDistance(asteroid);
+    const orbitLabel = asteroid?.orbitClass ? `Orbit: ${asteroid.orbitClass}` : null;
+
+    const parts = [];
+    if (approachDate && dateLabel && dateLabel !== "No recent approach") {
+        parts.push(`${prefix}: ${dateLabel}`);
+    } else {
+        parts.push(prefix);
+    }
+    if (distanceLabel) {
+        parts.push(`Distance: ${distanceLabel}`);
+    }
+    if (orbitLabel) {
+        parts.push(orbitLabel);
+    }
+
+    return parts.join(" • ") || "Approach data unavailable";
 }
 
 function describeAsteroidSize(diameter) {
@@ -1923,13 +1763,24 @@ if (asteroidSearchForm) {
 if (asteroidResetBtn) {
     asteroidResetBtn.addEventListener("click", () => {
         resetAsteroidSearch();
-        fetchAsteroidCatalog({ append: false });
     });
 }
 
 if (asteroidLoadMoreBtn) {
     asteroidLoadMoreBtn.addEventListener("click", () => {
         fetchAsteroidCatalog({ append: true });
+    });
+}
+
+if (asteroidStartDateInput) {
+    asteroidStartDateInput.addEventListener("change", () => {
+        enforceAsteroidDateBounds();
+    });
+}
+
+if (asteroidEndDateInput) {
+    asteroidEndDateInput.addEventListener("change", () => {
+        enforceAsteroidDateBounds();
     });
 }
 
@@ -1940,7 +1791,6 @@ if (locationForm) {
     });
 }
 
-initializeNeoFeedControls();
 initMap();
 initializeAsteroidCatalog();
 updateSizeComparison();

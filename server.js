@@ -262,9 +262,81 @@ const COMPOSITION_DENSITY = {
     unknown: 3200
 };
 
+const ASTEROID_NAME_ALIASES = new Map();
+
+function normalizeAsteroidKey(value) {
+    if (!value) return null;
+    return String(value).replace(/[()\s-]/g, "").toLowerCase();
+}
+
+function deriveFriendlyAlias(rawName) {
+    if (!rawName) return null;
+    const cleaned = String(rawName).replace(/[()]/g, "").trim();
+    if (!cleaned) return null;
+    const parts = cleaned.split(/\s+/);
+    if (parts.length <= 1) return null;
+    const [, ...rest] = parts;
+    const candidate = rest.join(" ").trim();
+    if (!candidate) return null;
+    if (/^\d/.test(candidate)) return null;
+    if (!/[a-zA-Z]/.test(candidate)) return null;
+    return candidate;
+}
+
+function registerAlias(keys, alias, officialName) {
+    if (!alias) return;
+    const normalizedAlias = alias.trim();
+    if (!normalizedAlias) return;
+    for (const key of keys) {
+        const normalizedKey = normalizeAsteroidKey(key);
+        if (normalizedKey) {
+            ASTEROID_NAME_ALIASES.set(normalizedKey, {
+                alias: normalizedAlias,
+                official: officialName ?? null
+            });
+        }
+    }
+}
+
+if (Array.isArray(fallbackAsteroids)) {
+    for (const item of fallbackAsteroids) {
+        const fallbackAlias = deriveFriendlyAlias(item?.name ?? "");
+        if (!fallbackAlias) continue;
+        const keys = [item?.designation, item?.name].filter(Boolean);
+        registerAlias(keys, fallbackAlias, item?.name ?? null);
+    }
+}
+
 const FALLBACK_ASTEROID_RECORDS = Array.isArray(fallbackAsteroids)
     ? fallbackAsteroids.map((item) => buildFallbackAsteroidRecord(item))
     : [];
+
+function resolveAsteroidNames(neo) {
+    const rawName = String(neo?.name ?? "").trim();
+    const designation = String(neo?.designation ?? neo?.neo_reference_id ?? "").trim();
+    const candidateKeys = [rawName, designation, neo?.neo_reference_id]
+        .map((value) => (value != null ? String(value) : ""))
+        .filter(Boolean);
+
+    let aliasEntry = null;
+    for (const key of candidateKeys) {
+        const normalized = normalizeAsteroidKey(key);
+        if (normalized && ASTEROID_NAME_ALIASES.has(normalized)) {
+            aliasEntry = ASTEROID_NAME_ALIASES.get(normalized);
+            break;
+        }
+    }
+
+    const derivedAlias = aliasEntry?.alias ?? deriveFriendlyAlias(rawName);
+    const officialName = rawName || aliasEntry?.official || designation || null;
+    const displayName = derivedAlias || officialName || designation || "Unnamed near-Earth object";
+
+    return {
+        displayName,
+        officialName: officialName || null,
+        alias: derivedAlias || null
+    };
+}
 
 function mapRecordToFeedEntry(record, fallbackDate = null) {
     const approachDateIso = record?.approachDateIso ?? fallbackDate ?? null;
@@ -331,6 +403,7 @@ function compositionLabel(key) {
 }
 
 function buildAsteroidRecord(neo) {
+    const { displayName, officialName, alias } = resolveAsteroidNames(neo);
     const diameter = neo?.estimated_diameter?.meters;
     const diameterMin = toNumber(diameter?.estimated_diameter_min);
     const diameterMax = toNumber(diameter?.estimated_diameter_max);
@@ -356,7 +429,9 @@ function buildAsteroidRecord(neo) {
 
     return {
         id: String(neo?.id ?? neo?.neo_reference_id ?? neo?.designation ?? neo?.name ?? fallbackId),
-        name: neo?.name ?? "Unknown object",
+        name: displayName,
+        officialName: officialName,
+        alias,
         designation: neo?.designation ?? neo?.neo_reference_id ?? null,
         diameter: avgDiameter != null ? clamp(avgDiameter, 5, 100000) : null,
         diameterMin,
@@ -381,6 +456,8 @@ function buildAsteroidRecord(neo) {
 }
 
 function buildFallbackAsteroidRecord(asteroid) {
+    const alias = deriveFriendlyAlias(asteroid?.name ?? "");
+    const displayName = alias ?? asteroid?.name ?? "Unknown object";
     const diameter = clamp(Number(asteroid.diameter) || 0, 5, 100000);
     const density = clamp(Number(asteroid.density) || COMPOSITION_DENSITY.unknown, 500, 11000);
     const velocity = clamp(Number(asteroid.velocity) || 22, 1, 150);
@@ -396,7 +473,9 @@ function buildFallbackAsteroidRecord(asteroid) {
 
     return {
         id: String(asteroid.designation ?? asteroid.name ?? `fallback-${Math.random()}`),
-        name: asteroid.name,
+        name: displayName,
+        officialName: asteroid?.name ?? displayName,
+        alias,
         designation: asteroid.designation ?? null,
         diameter,
         diameterMin: diameter,
@@ -471,7 +550,10 @@ function filterAsteroidRecords(records, {
         }
 
         if (query) {
-            const haystack = [record.name, record.designation].filter(Boolean).join(" ").toLowerCase();
+            const haystack = [record.name, record.officialName, record.designation]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase();
             if (!haystack.includes(query)) {
                 return false;
             }
