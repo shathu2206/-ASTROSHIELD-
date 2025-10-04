@@ -187,6 +187,8 @@ body {
     max-width: min(320px, calc(100vw - 48px));
     pointer-events: auto;
     backdrop-filter: blur(14px);
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .leaflet-tooltip.footprint-tooltip .footprint-tooltip__inner {
