@@ -36,20 +36,23 @@ const fireballFatalitiesEl = document.getElementById("fireball-fatalities");
 const blastFatalitiesEl = document.getElementById("blast-fatalities");
 const windFatalitiesEl = document.getElementById("wind-fatalities");
 const seismicFatalitiesEl = document.getElementById("seismic-fatalities");
-const resultsCard = document.querySelector(".results-card");
 const tsunamiWaveSourceEl = document.getElementById("tsunami-wave-source");
 const tsunamiWaveCoastEl = document.getElementById("tsunami-wave-coast");
 const tsunamiRunupEl = document.getElementById("tsunami-runup");
 const tsunamiArrivalEl = document.getElementById("tsunami-arrival");
 const tsunamiReachEl = document.getElementById("tsunami-reach");
 const tsunamiFatalitiesEl = document.getElementById("tsunami-fatalities");
-const DEFAULT_SUMMARY_TEXT = summaryText?.textContent ?? "Select a location and run the simulation to see projected effects.";
-const DEFAULT_POPULATION_TEXT = populationSummary?.textContent ?? "Drop a pin to load nearby population estimates.";
+
+const DEFAULT_SUMMARY_TEXT =
+    summaryText?.textContent ?? "Select a location and run the simulation to see projected effects.";
+const DEFAULT_POPULATION_TEXT =
+    populationSummary?.textContent ?? "Drop a pin to load nearby population estimates.";
 const DEFAULT_COORDINATE_TEXT = centerCoordinatesEl?.textContent ?? "No impact location selected";
 const DEFAULT_COORDINATE_LABEL = centerLabelEl?.textContent ?? "";
 const DEFAULT_ENVIRONMENT_TEXT = centerEnvironmentEl?.textContent ?? "Surface context unavailable.";
 const DEFAULT_ASTEROID_META = asteroidMeta?.textContent ?? "Using manually configured parameters.";
 const DEFAULT_MAP_VIEW = { center: [20, 0], zoom: 3 };
+
 const RESULT_FIELDS = [
     craterDiameterEl,
     craterDepthEl,
@@ -70,8 +73,7 @@ const RESULT_FIELDS = [
     tsunamiArrivalEl,
     tsunamiReachEl,
     tsunamiFatalitiesEl
-];
-
+].filter(Boolean);
 
 const FOOTPRINT_COLORS = {
     crater: "#ffb347",
@@ -117,15 +119,13 @@ let selectedLocation = null;
 let populationAbortController = null;
 let mapStatusTimer = null;
 
-
 function formatCoordinate(lat, lng) {
     const degreeSymbol = "\u00B0";
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        return "0.00000" + degreeSymbol + ", 0.00000" + degreeSymbol;
+        return `0.00000${degreeSymbol}, 0.00000${degreeSymbol}`;
     }
-    return lat.toFixed(5) + degreeSymbol + ", " + lng.toFixed(5) + degreeSymbol;
+    return `${lat.toFixed(5)}${degreeSymbol}, ${lng.toFixed(5)}${degreeSymbol}`;
 }
-
 
 function updateMapStatus(message, { sticky = false } = {}) {
     if (!mapStatusEl) return;
@@ -145,8 +145,6 @@ function updateMapStatus(message, { sticky = false } = {}) {
         }, 2600);
     }
 }
-
-
 
 function initMap() {
     if (!mapContainer) return;
@@ -215,7 +213,6 @@ function placeImpactMarker(lat, lng, label) {
     loadGeology();
 
     updateFootprints([]);
-
     resetResultDisplay();
 }
 
@@ -274,19 +271,21 @@ function renderPopulation(data) {
     if (!populationSummary) return;
     if (data?.population) {
         const { population, source, meta } = data;
-        const radius = population.radiusKm ? `${population.radiusKm.toFixed(0)} km` : "local area";
-        const density = Number.isFinite(population.density) ? `${population.density.toFixed(0)} ppl/km^2` : "unknown density";
+        const radiusLabel = population.radiusKm ? `${population.radiusKm.toFixed(0)} km` : "local area";
+        const densityLabel = Number.isFinite(population.density)
+            ? `${population.density.toFixed(0)} ppl/km^2`
+            : "unknown density";
         const locationLabel = meta?.city ? `${meta.city}${meta.country ? ", " + meta.country : ""}` : meta?.country || null;
         const radiusKm = Number.isFinite(population.radiusKm) && population.radiusKm > 0 ? population.radiusKm : 30;
-        const estimatedTotal = population.total || population.density * Math.PI * (radiusKm ** 2);
+        const estimatedTotal = population.total || population.density * Math.PI * radiusKm ** 2;
         const peopleText = formatPeople(estimatedTotal);
         const lines = [];
         if (locationLabel) {
-            lines.push(`${locationLabel}: ~${peopleText} people within ${radius}`);
+            lines.push(`${locationLabel}: ~${peopleText} people within ${radiusLabel}`);
         } else {
-            lines.push(`~${peopleText} people within ${radius}`);
+            lines.push(`~${peopleText} people within ${radiusLabel}`);
         }
-        lines.push(`Average density ${density}`);
+        lines.push(`Average density ${densityLabel}`);
         if (source) {
             lines.push(`<span class="source">Source: ${source}</span>`);
         }
@@ -359,7 +358,7 @@ function buildGeologyPopup(geology) {
             parts.push(`Significant wave height: ${ocean.waveHeightMeters.toFixed(1)} m`);
         }
         if (Number.isFinite(ocean.surfaceTemperatureC)) {
-            parts.push(`Sea surface temperature: ${ocean.surfaceTemperatureC.toFixed(1)} deg C`);
+            parts.push(`Sea surface temperature: ${ocean.surfaceTemperatureC.toFixed(1)} °C`);
         }
         if (Number.isFinite(ocean.wavePeriodSeconds)) {
             parts.push(`Wave period: ${ocean.wavePeriodSeconds.toFixed(0)} s`);
@@ -386,7 +385,7 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
 
     if (centerEnvironmentEl) {
         const segments = [];
-               const isOceanTarget = terrainSelect?.value === "water";
+        const isOceanTarget = terrainSelect?.value === "water";
         if (isOceanTarget) {
             const depth = Number(geology?.ocean?.depthMeters);
             if (Number.isFinite(depth)) {
@@ -446,7 +445,6 @@ function escapeHtml(value) {
     return (value ?? "").toString().replace(/[&<>"']/g, (char) => map[char] || char);
 }
 
-
 function clearResultReadouts() {
     RESULT_FIELDS.forEach((field) => {
         if (field) {
@@ -460,11 +458,13 @@ function hideResultsCard() {
         resultsCard.classList.add("results-card--pending");
     }
 }
+
 function showResultsCard() {
     if (resultsCard) {
         resultsCard.classList.remove("results-card--pending");
     }
 }
+
 function resetResultDisplay() {
     hideResultsCard();
     clearResultReadouts();
@@ -485,7 +485,7 @@ function resetSimulation() {
     }
     updateSizeComparison();
 
-       resetResultDisplay();
+    resetResultDisplay();
 
     selectedLocation = null;
 
@@ -504,7 +504,6 @@ function resetSimulation() {
     if (locationInput) locationInput.value = "";
 
     if (populationSummary) populationSummary.textContent = DEFAULT_POPULATION_TEXT;
-    
 
     if (asteroidSelect) {
         asteroidSelect.value = "custom";
@@ -548,7 +547,6 @@ function formatFootprintStatValue(stat) {
                 return "--";
             }
             return Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 });
-
     }
 }
 
@@ -579,7 +577,9 @@ function createFootprintPolygon(center, outerRadius, innerRadius, styleOptions =
         return null;
     }
     const safeInnerRadius = Number(innerRadius);
-    const safeInner = Number.isFinite(safeInnerRadius) && safeInnerRadius > 0 && safeInnerRadius < safeOuter ? safeInnerRadius : 0;
+    const safeInner = Number.isFinite(safeInnerRadius) && safeInnerRadius > 0 && safeInnerRadius < safeOuter
+        ? safeInnerRadius
+        : 0;
     try {
         const outerCircle = L.circle([safeLat, safeLng], { radius: safeOuter });
         const outerCoords = outerCircle
@@ -620,12 +620,11 @@ function createFootprintPolygon(center, outerRadius, innerRadius, styleOptions =
     }
 }
 
-
 function updateFootprints(footprints = [], location) {
     clearFootprints();
     if (!footprintLayer || !location) return;
 
-   const orderedFootprints = [...footprints]
+    const orderedFootprints = [...footprints]
         .map((footprint) => {
             const radius = Number(footprint?.radiusMeters);
             if (!Number.isFinite(radius) || radius <= 0) {
@@ -636,7 +635,7 @@ function updateFootprints(footprints = [], location) {
         .filter(Boolean)
         .sort((a, b) => b.radiusMeters - a.radiusMeters);
 
-       orderedFootprints.forEach((footprint, index) => {
+    orderedFootprints.forEach((footprint, index) => {
         const nextFootprint = orderedFootprints[index + 1];
         const innerRadius = nextFootprint?.radiusMeters ?? 0;
         const color = FOOTPRINT_COLORS[footprint.type] ?? "#ffffff";
@@ -676,12 +675,15 @@ function updateFootprints(footprints = [], location) {
                 fillOpacity: defaultFill
             });
         });
-   footprintLayer.addLayer(polygon);    });
+        footprintLayer.addLayer(polygon);
+    });
 }
 
 async function runSimulation() {
     if (!selectedLocation) {
-        summaryText.textContent = "Drop an impact pin before running the simulation.";
+        if (summaryText) {
+            summaryText.textContent = "Drop an impact pin before running the simulation.";
+        }
         return;
     }
 
@@ -695,10 +697,12 @@ async function runSimulation() {
         populationOverride: Number(populationInput?.value ?? NaN)
     };
 
-     hideResultsCard();
+    hideResultsCard();
     clearResultReadouts();
 
-    summaryText.textContent = "Running impact simulation...";
+    if (summaryText) {
+        summaryText.textContent = "Running impact simulation...";
+    }
     try {
         const response = await fetch("/api/simulate", {
             method: "POST",
@@ -709,11 +713,11 @@ async function runSimulation() {
         const data = await response.json();
         renderResults(data);
         updateMapStatus("Simulation updated");
-                hideResultsCard();
-
     } catch (error) {
         console.error(error);
-        summaryText.textContent = "Simulation failed. Check console for details.";
+        if (summaryText) {
+            summaryText.textContent = "Simulation failed. Check console for details.";
+        }
         updateMapStatus("Simulation failed.", { sticky: true });
     }
 }
@@ -734,27 +738,31 @@ function renderResults(data) {
 
     const summaryBase = summary ?? "Impact summary unavailable.";
     const impactedPopulation = data?.population?.population?.total;
-    const impactedText = Number.isFinite(impactedPopulation) && impactedPopulation > 0 ? formatPeople(impactedPopulation) : null;
-    summaryText.textContent = impactedText
-        ? `${summaryBase} Estimated impacted population: ~${impactedText} people.`
-        : summaryBase;
+    const impactedText = Number.isFinite(impactedPopulation) && impactedPopulation > 0
+        ? formatPeople(impactedPopulation)
+        : null;
+    if (summaryText) {
+        summaryText.textContent = impactedText
+            ? `${summaryBase} Estimated impacted population: ~${impactedText} people.`
+            : summaryBase;
+    }
 
-    craterDiameterEl.textContent = formatDistance(impact?.craterDiameter ?? NaN);
-    craterDepthEl.textContent = formatDistance(impact?.craterDepth ?? NaN);
-    fireballEl.textContent = formatDistance(impact?.fireballRadius ?? NaN);
+    if (craterDiameterEl) craterDiameterEl.textContent = formatDistance(impact?.craterDiameter ?? NaN);
+    if (craterDepthEl) craterDepthEl.textContent = formatDistance(impact?.craterDepth ?? NaN);
+    if (fireballEl) fireballEl.textContent = formatDistance(impact?.fireballRadius ?? NaN);
 
-    shockwaveEl.textContent = formatDistance(impact?.shockwaveRadius ?? NaN);
-    windEl.textContent = formatWind(impact?.peakWind ?? NaN);
-    richterEl.textContent = formatMagnitude(impact?.richterMagnitude ?? NaN);
+    if (shockwaveEl) shockwaveEl.textContent = formatDistance(impact?.shockwaveRadius ?? NaN);
+    if (windEl) windEl.textContent = formatWind(impact?.peakWind ?? NaN);
+    if (richterEl) richterEl.textContent = formatMagnitude(impact?.richterMagnitude ?? NaN);
 
-    severeDamageEl.textContent = formatDistance(infrastructure?.severeDamageRadius ?? NaN);
-    brokenWindowsEl.textContent = formatDistance(infrastructure?.windowDamageRadius ?? NaN);
-    economicLossEl.textContent = formatCurrency(infrastructure?.economicLoss ?? NaN);
+    if (severeDamageEl) severeDamageEl.textContent = formatDistance(infrastructure?.severeDamageRadius ?? NaN);
+    if (brokenWindowsEl) brokenWindowsEl.textContent = formatDistance(infrastructure?.windowDamageRadius ?? NaN);
+    if (economicLossEl) economicLossEl.textContent = formatCurrency(infrastructure?.economicLoss ?? NaN);
 
-    fireballFatalitiesEl.textContent = formatPeople(casualties?.fireball?.fatalities ?? NaN);
-    blastFatalitiesEl.textContent = formatPeople(casualties?.blast?.fatalities ?? NaN);
-    windFatalitiesEl.textContent = formatPeople(casualties?.wind?.fatalities ?? NaN);
-    seismicFatalitiesEl.textContent = formatPeople(casualties?.seismic?.fatalities ?? NaN);
+    if (fireballFatalitiesEl) fireballFatalitiesEl.textContent = formatPeople(casualties?.fireball?.fatalities ?? NaN);
+    if (blastFatalitiesEl) blastFatalitiesEl.textContent = formatPeople(casualties?.blast?.fatalities ?? NaN);
+    if (windFatalitiesEl) windFatalitiesEl.textContent = formatPeople(casualties?.wind?.fatalities ?? NaN);
+    if (seismicFatalitiesEl) seismicFatalitiesEl.textContent = formatPeople(casualties?.seismic?.fatalities ?? NaN);
 
     const setTsunamiText = (el, value) => {
         if (!el) return;
@@ -784,7 +792,8 @@ function renderResults(data) {
     } else {
         updateFootprints([]);
     }
-        showResultsCard();
+
+    showResultsCard();
 }
 
 async function fetchAsteroids() {
@@ -800,8 +809,11 @@ async function fetchAsteroids() {
             asteroidSelect.innerHTML = '<option value="custom">Custom asteroid</option>';
             latestAsteroids.forEach((asteroid, index) => {
                 const option = document.createElement("option");
-                option.value = index;
-                option.textContent = `${asteroid.name} (${asteroid.diameter.toFixed(0)} m)`;
+                option.value = String(index);
+                const diameterLabel = Number.isFinite(asteroid.diameter)
+                    ? `${Math.round(asteroid.diameter)} m`
+                    : "unknown size";
+                option.textContent = `${asteroid.name} (${diameterLabel})`;
                 asteroidSelect.appendChild(option);
             });
         }
@@ -815,7 +827,7 @@ async function fetchAsteroids() {
         }
     } finally {
         refreshAsteroidsBtn.disabled = false;
-    refreshAsteroidsBtn.textContent = "Fetch Asteroids";
+        refreshAsteroidsBtn.textContent = "Fetch Near-Earth Objects";
     }
 }
 
@@ -828,20 +840,37 @@ function applyAsteroidPreset(index) {
     }
     const asteroid = latestAsteroids[Number(index)];
     if (!asteroid) return;
-    if (diameterInput) diameterInput.value = Math.round(asteroid.diameter);
-    if (velocityInput) velocityInput.value = Math.round(asteroid.velocity);
-    if (angleInput) angleInput.value = Math.round(asteroid.impactAngle ?? 45);
-    if (densitySelect) {
-        const match = Array.from(densitySelect.options).find((option) => Number(option.value) === asteroid.density);
-        if (match) {
-            densitySelect.value = match.value;
+    if (diameterInput && Number.isFinite(asteroid.diameter)) {
+        diameterInput.value = Math.round(asteroid.diameter);
+    }
+    if (velocityInput && Number.isFinite(asteroid.velocity)) {
+        velocityInput.value = Math.round(asteroid.velocity);
+    }
+    if (angleInput && Number.isFinite(asteroid.impactAngle)) {
+        angleInput.value = Math.round(asteroid.impactAngle);
+    }
+    if (densitySelect && Number.isFinite(asteroid.density)) {
+        const exactMatch = Array.from(densitySelect.options).find(
+            (option) => Number(option.value) === Number(asteroid.density)
+        );
+        if (exactMatch) {
+            densitySelect.value = exactMatch.value;
+        } else if (asteroid.density >= 6000) {
+            densitySelect.value = "8000";
+        } else if (asteroid.density <= 800) {
+            densitySelect.value = "500";
+        } else if (asteroid.density <= 2000) {
+            densitySelect.value = "1500";
         } else {
-            const closest = asteroid.density >= 6000 ? "8000" : asteroid.density <= 800 ? "500" : asteroid.density <= 2000 ? "1500" : "3000";
-            densitySelect.value = closest;
+            densitySelect.value = "3000";
         }
     }
     if (asteroidMeta) {
-        asteroidMeta.textContent = `Loaded ${asteroid.name}: ${asteroid.designation} | H=${asteroid.absoluteMagnitude}`;
+        const designation = asteroid.designation ? `: ${asteroid.designation}` : "";
+        const magnitude = Number.isFinite(asteroid.absoluteMagnitude)
+            ? ` | H=${asteroid.absoluteMagnitude}`
+            : "";
+        asteroidMeta.textContent = `Loaded ${asteroid.name}${designation}${magnitude}`;
     }
     updateSizeComparison();
 }
@@ -869,13 +898,14 @@ async function geocode(query) {
 }
 
 function formatDistance(meters) {
-    if (!isFinite(meters) || meters <= 0) {
+    const value = Number(meters);
+    if (!Number.isFinite(value) || value <= 0) {
         return "--";
     }
-    if (meters < 1000) {
-        return `${meters.toFixed(0)} m`;
+    if (value < 1000) {
+        return `${value.toFixed(0)} m`;
     }
-    const km = meters / 1000;
+    const km = value / 1000;
     if (km < 100) {
         return `${km.toFixed(1)} km`;
     }
@@ -883,28 +913,31 @@ function formatDistance(meters) {
 }
 
 function formatPeople(value) {
-    if (!isFinite(value) || value <= 0) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) {
         return "Negligible";
     }
     const formatter = new Intl.NumberFormat("en-US", {
         notation: "compact",
         maximumFractionDigits: 1
     });
-    return formatter.format(Math.round(value));
+    return formatter.format(Math.round(number));
 }
 
 function formatMagnitude(value) {
-    if (!isFinite(value) || value <= 0) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) {
         return "N/A";
     }
-    return value.toFixed(1);
+    return number.toFixed(1);
 }
 
 function formatWind(ms) {
-    if (!isFinite(ms) || ms <= 0) {
+    const speed = Number(ms);
+    if (!Number.isFinite(speed) || speed <= 0) {
         return "--";
     }
-    const mph = ms * 2.23694;
+    const mph = speed * 2.23694;
     if (mph < 1000) {
         return `${mph.toFixed(0)} mph`;
     }
@@ -912,7 +945,8 @@ function formatWind(ms) {
 }
 
 function formatCurrency(value) {
-    if (!isFinite(value) || value <= 0) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) {
         return "--";
     }
     const formatter = new Intl.NumberFormat("en-US", {
@@ -920,48 +954,53 @@ function formatCurrency(value) {
         currency: "USD",
         notation: "compact",
         maximumFractionDigits: 1
-         });
-    return formatter.format(value);
+    });
+    return formatter.format(number);
 }
 
 function formatHeight(value) {
-    if (!isFinite(value) || value <= 0) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) {
         return "--";
     }
-    if (value < 100) {
-        return `${value.toFixed(1)} m`;
+    if (number < 100) {
+        return `${number.toFixed(1)} m`;
     }
-    if (value < 1000) {
-        return `${value.toFixed(0)} m`;
+    if (number < 1000) {
+        return `${number.toFixed(0)} m`;
     }
-    return `${(value / 1000).toFixed(2)} km`;
+    return `${(number / 1000).toFixed(2)} km`;
 }
 
 function formatDurationMinutes(minutes) {
-    if (!isFinite(minutes) || minutes <= 0) {
+    const number = Number(minutes);
+    if (!Number.isFinite(number) || number <= 0) {
         return "--";
     }
-    if (minutes < 120) {
-        return `${minutes.toFixed(0)} min`;
+    if (number < 120) {
+        return `${number.toFixed(0)} min`;
     }
-    const hours = Math.floor(minutes / 60);
-    const remaining = minutes - hours * 60;
+    const hours = Math.floor(number / 60);
+    const remaining = number - hours * 60;
     if (remaining < 5) {
         return `${hours} h`;
     }
     return `${hours} h ${Math.round(remaining)} min`;
 }
 
-
-
 function formatEnergy(value) {
-    if (!isFinite(value) || value <= 0) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) {
         return "--";
     }
-    const digits = value >= 100 ? 0 : value >= 10 ? 1 : 2;
-    return `${value.toFixed(digits)} Mt TNT`;
+    const megatons = number / 4.184e15;
+    if (megatons >= 0.1) {
+        const digits = megatons >= 10 ? 0 : 2;
+        return `${megatons.toFixed(digits)} Mt TNT`;
+    }
+    const kilotons = megatons * 1000;
+    return `${kilotons.toFixed(kilotons >= 10 ? 0 : 1)} kt TNT`;
 }
-
 
 function formatDiameterLabel(diameter) {
     if (!Number.isFinite(diameter) || diameter <= 0) {
@@ -1000,7 +1039,9 @@ function describeAsteroidSize(diameter) {
         descriptor = `${roundedRatio}x larger than ${reference.label}`;
     }
     const diameterLabel = formatDiameterLabel(diameter);
-    return diameterLabel ? `approx. ${diameterLabel} across - ${descriptor}.` : `approx. ${descriptor}.`;
+    return diameterLabel
+        ? `approx. ${diameterLabel} across - ${descriptor}.`
+        : `approx. ${descriptor}.`;
 }
 
 function updateSizeComparison() {
@@ -1015,12 +1056,12 @@ if (form) {
         runSimulation();
     });
 }
+
 if (resetButton) {
     resetButton.addEventListener("click", () => {
         resetSimulation();
     });
 }
-
 
 if (populationInput) {
     populationInput.addEventListener("change", (event) => {
@@ -1062,31 +1103,4 @@ if (locationForm) {
 initMap();
 fetchAsteroids();
 updateSizeComparison();
-    resetResultDisplay();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+resetResultDisplay();
