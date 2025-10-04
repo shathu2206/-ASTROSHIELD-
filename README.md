@@ -25,11 +25,19 @@ Interactive asteroid impact sandbox with live satellite map targeting, asteroid 
 npm start
 ```
 
-This launches an Express server on http://localhost:3000. The server serves the UI from `public/` and exposes API endpoints for simulation, population lookup, geocoding, and NASA NEO datasets. The NASA requests are proxied through the server so your API key stays on the backend.
+Always start the Node.js server instead of opening `public/index.html` directly in your browser (for example via "Open with Live Server" in VS Code). The frontend depends on the backend routes under `/api/*` to proxy NASA and other third-party requests. If you skip `npm start`, those network calls fail with `ERR_CONNECTION_REFUSED` and the UI shows "Data not loaded" status messages.
+
+When `npm start` is running you can browse to http://localhost:3000. The Express server hosts the UI from `public/` and exposes API endpoints for the simulation, population lookup, geocoding, and NASA NEO datasets. NASA requests are proxied through the server so your API key stays on the backend.
 
 ### Environment variables
 
 - `NASA_API_KEY` – personal key from https://api.nasa.gov/. If omitted the app uses NASA's shared `DEMO_KEY`, which is heavily rate limited. When NASA returns an error (for example due to rate limits) the UI automatically falls back to the bundled offline dataset in `data/asteroids-fallback.json`.
+
+If you're working inside VS Code:
+
+1. Open the built-in terminal (`` Ctrl+` ``) and run `npm install` once, then `npm start`.
+2. Leave that terminal running so the backend keeps proxying requests while you develop.
+3. Visit http://localhost:3000 in your browser. The page can fetch external data as long as your machine has internet access. Without connectivity you'll see the offline fallback dataset only.
 
 ### NASA NeoWs proxy endpoints
 
@@ -40,6 +48,12 @@ The Express server provides a small proxy for the [NASA NeoWs API](https://api.n
 - `GET /api/neo-fallback` – returns the offline sample data bundled with the project.
 
 Frontend requests should use these routes instead of calling NASA directly; they keep the API key server-side and provide consistent error handling.
+
+### Troubleshooting the NASA feed
+
+- Confirm your development machine (or Codespace) can reach the public internet. If `http://localhost:3000` cannot open outbound HTTPS connections the server will switch to the offline asteroid catalog.
+- Provide a personal `NASA_API_KEY` in `.env` to avoid the shared demo key's strict rate limit.
+- When the app shows a "Mission Control" warning banner it is serving cached asteroid data and includes the specific error returned by NASA to help you diagnose connectivity or authentication issues.
 
 ## Features
 - Leaflet satellite map (Esri World Imagery) with on-map search, left-click pin placement, and hazard footprint overlays.

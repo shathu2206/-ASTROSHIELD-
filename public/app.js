@@ -398,12 +398,15 @@ async function handleNeoLoadClick() {
             const fallbackAsteroids = Array.isArray(fallback?.asteroids) ? fallback.asteroids : [];
             renderNeoTable(fallbackAsteroids);
             if (fallbackAsteroids.length === 0) {
-                setNeoStatus("NASA feed unavailable and no offline asteroids were found.", "warning");
+                setNeoStatus(
+                    "Mission Control cannot reach NASA and no offline asteroids were found. Check your connection or set NASA_API_KEY in .env.",
+                    "warning"
+                );
             } else {
                 setNeoStatus(
-                    `NASA feed unavailable; showing ${fallbackAsteroids.length.toLocaleString()} offline sample object${
+                    `Mission Control is using the offline asteroid archive (${fallbackAsteroids.length.toLocaleString()} object${
                         fallbackAsteroids.length === 1 ? "" : "s"
-                    }`,
+                    }). Verify connectivity or NASA_API_KEY to restore live data.`,
                     "warning"
                 );
             }
@@ -450,6 +453,13 @@ function initializeNeoFeedControls() {
     neoLoadButton.addEventListener("click", () => {
         handleNeoLoadClick();
     });
+
+    if (!neoFeedInitialized) {
+        neoFeedInitialized = true;
+        window.requestAnimationFrame(() => {
+            handleNeoLoadClick();
+        });
+    }
 }
 
 let latestGeology = null;
@@ -477,6 +487,7 @@ const asteroidSearchState = {
 let selectedLocation = null;
 let populationAbortController = null;
 let mapStatusTimer = null;
+let neoFeedInitialized = false;
 
 function formatCoordinate(lat, lng) {
     const degreeSymbol = "\u00B0";
