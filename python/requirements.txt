@@ -1,0 +1,7 @@
+# Allow pip to pick a poliastro release compatible with your Python interpreter.
+# If you have Python 3.8+, this will typically install a recent poliastro; otherwise
+# upgrade your Python (recommended) or use conda for binary wheels.
+poliastro>=0.12.0
+astropy>=5.0
+numpy
+requests

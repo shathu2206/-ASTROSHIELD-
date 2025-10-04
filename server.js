@@ -1,31 +1,206 @@
 import express from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
-
 dotenv.config();
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NASA_API_KEY = process.env.NASA_API_KEY || "DEMO_KEY";
 const DEFAULT_USER_AGENT = "AsteroidImpactLab/1.0 (+https://example.com/contact)";
-
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static("public"));
-
+const COMET_DATASET_URL =
+    "https://data.nasa.gov/docs/legacy/Near-Earth_Comets_-_Orbital_Elements/Near-Earth_Comets_-_Orbital_Elements_rows.json";
+const AU_IN_KM = 149_597_870.7;
+const SOLAR_MU_KM3_S2 = 1.32712440018e11;
 const TERRAIN = {
     land: { label: "continental crust", density: 2600, dampening: 1 },
     water: { label: "open ocean", density: 1020, dampening: 0.78 },
     ice: { label: "polar ice", density: 930, dampening: 0.62 }
 };
-
 const CASUALTY_FATALITY_FACTORS = {
     fireball: 0.98,
     blast: 0.8,
     wind: 0.5,
     seismic: 0.15
 };
-
 const ECONOMIC_LOSS_PER_FATALITY = 4_200_000;
+const DEFAULT_ALBEDO = 0.14;
+function estimateDiameterFromH(absoluteMagnitude, albedo = DEFAULT_ALBEDO) {
+    const H = Number(absoluteMagnitude);
+    const p = Number.isFinite(albedo) && albedo > 0 ? albedo : DEFAULT_ALBEDO;
+    if (!Number.isFinite(H)) return null;
+    const diameterKm = (1329 / Math.sqrt(p)) * 10 ** (-0.2 * H);
+    return diameterKm * 1000;
+}
+function extractPhysicalParameters(sbdb) {
+    const physical = Array.isArray(sbdb?.phys_par) ? sbdb.phys_par : [];
+    const lookup = (name) => physical.find((entry) => (entry?.name || "").toLowerCase() === name.toLowerCase());
+    const absoluteMagnitude = Number(lookup("H")?.value ?? lookup("ABS_MAG")?.value);
+    const albedoEntry = lookup("ALBEDO") || lookup("PV");
+    const albedo = Number(albedoEntry?.value);
+    const diameterEntry = lookup("DIAMETER") || lookup("D") || lookup("DIAMETER_KM");
+    const diameterValue = Number(diameterEntry?.value);
+    const diameterMeters = Number.isFinite(diameterValue) ? diameterValue * 1000 : null;
+    return {
+        absoluteMagnitude,
+        albedo,
+        diameterMeters
+    };
+}
+function mapSbdbOrbit(sbdb) {
+    const elements = Array.isArray(sbdb?.orbit?.elements) ? sbdb.orbit.elements : [];
+    const valueOf = (...labels) => {
+        for (const label of labels) {
+            const entry = elements.find((item) => item?.label === label || item?.name === label);
+            if (entry?.value != null) {
+                const numeric = Number(entry.value);
+                if (Number.isFinite(numeric)) {
+                    return numeric;
+                }
+            }
+        }
+        return null;
+    };
+    return {
+        semiMajorAxisAu: valueOf("a"),
+        eccentricity: valueOf("e"),
+        perihelionDistanceAu: valueOf("q"),
+        aphelionDistanceAu: valueOf("ad", "Q"),
+        inclinationDeg: valueOf("i"),
+        ascendingNodeDeg: valueOf("om", "node"),
+        argPerihelionDeg: valueOf("w", "peri"),
+        meanAnomalyDeg: valueOf("ma", "M"),
+        meanMotionDegPerDay: valueOf("n"),
+        periodDays: valueOf("per"),
+        timeOfPerihelion: valueOf("tp"),
+        epochJulian: Number(sbdb?.orbit?.epoch)
+    };
+}
+function mapSocrataDataset(dataset) {
+    const columns = Array.isArray(dataset?.meta?.view?.columns) ? dataset.meta.view.columns : [];
+    const data = Array.isArray(dataset?.data) ? dataset.data : [];
+    const fieldIndex = new Map();
+    columns.forEach((column, index) => {
+        const fieldName = column?.fieldName;
+        if (fieldName && !fieldName.startsWith(":")) {
+            fieldIndex.set(fieldName, index);
+        }
+    });
+    return data.map((row) => {
+        const record = {};
+        fieldIndex.forEach((columnIndex, fieldName) => {
+            record[fieldName] = row?.[columnIndex] ?? null;
+        });
+        return record;
+    });
+}
+function wrapDegrees(degrees) {
+    if (!Number.isFinite(degrees)) return null;
+    let value = degrees % 360;
+    if (value < 0) value += 360;
+    return value;
+}
+function computePerihelionSpeed(perihelionAu, semiMajorAxisAu) {
+    const q = Number(perihelionAu);
+    const a = Number(semiMajorAxisAu);
+    if (!Number.isFinite(q) || !Number.isFinite(a) || q <= 0 || a <= 0) {
+        return null;
+    }
+    const radiusKm = q * AU_IN_KM;
+    const semiMajorKm = a * AU_IN_KM;
+    const term = 2 / radiusKm - 1 / semiMajorKm;
+    if (term <= 0) {
+        return null;
+    }
+    return Math.sqrt(SOLAR_MU_KM3_S2 * term);
+}
+function estimateCometDiameter(moidAu) {
+    const moid = Number(moidAu);
+    if (!Number.isFinite(moid)) {
+        return 1200;
+    }
+    if (moid <= 0.01) {
+        return 3200;
+    }
+    if (moid <= 0.03) {
+        return 2100;
+    }
+    return 1200;
+}
+function mapCometCatalog(dataset) {
+    const records = mapSocrataDataset(dataset);
+    return records
+        .map((row) => {
+            const name = row.object_name || row.object || "Comet";
+            const designation = row.object || row.object_name || name;
+            const eccentricity = Number(row.e);
+            const perihelionAu = Number(row.q_au_1);
+            const aphelionAu = Number(row.q_au_2);
+            const periodYears = Number(row.p_yr);
+            const periodDays = Number.isFinite(periodYears) ? periodYears * 365.25 : null;
+            let semiMajorAxisAu = null;
+            if (Number.isFinite(perihelionAu) && Number.isFinite(aphelionAu)) {
+                semiMajorAxisAu = (perihelionAu + aphelionAu) / 2;
+            } else if (Number.isFinite(perihelionAu) && Number.isFinite(eccentricity) && eccentricity < 1) {
+                semiMajorAxisAu = perihelionAu / (1 - eccentricity);
+            }
+            const derivedAphelionAu =
+                Number.isFinite(aphelionAu) || !Number.isFinite(semiMajorAxisAu) || !Number.isFinite(eccentricity)
+                    ? aphelionAu
+                    : semiMajorAxisAu * (1 + eccentricity);
+            const meanMotionDegPerDay =
+                Number.isFinite(periodDays) && periodDays > 0 ? 360 / periodDays : null;
+            const timeOfPerihelion = Number(row.tp_tdb);
+            const epochJulian = Number(row.epoch_tdb);
+            let meanAnomalyDeg = null;
+            if (
+                Number.isFinite(meanMotionDegPerDay) &&
+                Number.isFinite(epochJulian) &&
+                Number.isFinite(timeOfPerihelion)
+            ) {
+                const delta = epochJulian - timeOfPerihelion;
+                meanAnomalyDeg = wrapDegrees(meanMotionDegPerDay * delta);
+            }
+            const inclinationDeg = Number(row.i_deg);
+            const ascendingNodeDeg = Number(row.node_deg);
+            const argPerihelionDeg = Number(row.w_deg);
+            const moidAu = Number(row.moid_au);
+            const perihelionSpeed = computePerihelionSpeed(perihelionAu, semiMajorAxisAu);
+            return {
+                name,
+                designation,
+                diameter: clamp(estimateCometDiameter(moidAu), 300, 6000),
+                velocity: clamp(Number.isFinite(perihelionSpeed) ? perihelionSpeed : 35, 5, 75),
+                density: 500,
+                impactAngle: 45,
+                source: "comet",
+                hazardProbability: null,
+                palermoScale: null,
+                orbitQuery: designation,
+                absoluteMagnitude: null,
+                neo: true,
+                pha: Number.isFinite(moidAu) && moidAu <= 0.05,
+                moidAu,
+                precomputedOrbit: {
+                    semiMajorAxisAu,
+                    eccentricity,
+                    perihelionDistanceAu: perihelionAu,
+                    aphelionDistanceAu: derivedAphelionAu,
+                    inclinationDeg,
+                    ascendingNodeDeg,
+                    argPerihelionDeg,
+                    meanAnomalyDeg,
+                    meanMotionDegPerDay,
+                    periodDays,
+                    timeOfPerihelion,
+                    epochJulian
+                },
+                orbitClassCode: "NEC",
+                orbitClassName: "Near-Earth Comet"
+            };
+        })
+        .filter((entry) => Number.isFinite(entry.precomputedOrbit?.semiMajorAxisAu));
+}
 
 async function fetchJson(url, options = {}) {
     const response = await fetch(url, {
@@ -42,6 +217,7 @@ async function fetchJson(url, options = {}) {
     }
     return response.json();
 }
+
 
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -268,6 +444,42 @@ async function resolveGeology(lat, lng) {
         highlights: highlights.filter(Boolean),
         ocean
     };
+
+    async function resolveEarthquakeAnalog(magnitude) {
+    const target = Number(magnitude);
+    if (!Number.isFinite(target) || target <= 0) {
+        return null;
+    }
+    const minMagnitude = Math.max(target - 0.35, 0);
+    const maxMagnitude = target + 0.35;
+    const params = new URLSearchParams({
+        format: "geojson",
+        minmagnitude: minMagnitude.toFixed(1),
+        maxmagnitude: maxMagnitude.toFixed(1),
+        limit: "1",
+        orderby: "magnitude",
+        starttime: "1970-01-01",
+        endtime: new Date().toISOString().slice(0, 10)
+    });
+    try {
+        const url = `https://earthquake.usgs.gov/fdsnws/event/1/query?${params.toString()}`;
+        const catalog = await fetchJson(url);
+        const feature = catalog?.features?.[0];
+        if (!feature) return null;
+        const properties = feature.properties ?? {};
+        const time = Number(properties.time);
+        return {
+            title: properties.place || "USGS event",
+            magnitude: Number(properties.mag),
+            time,
+            year: Number.isFinite(time) ? new Date(time).getUTCFullYear() : null,
+            url: properties.url || null
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
 }
 
 function computeImpact({ diameter, velocity, angleDeg, density, terrainKey }) {
@@ -561,7 +773,7 @@ function buildSummary(parameters, impact, location, populationInfo, tsunami) {
         ? ` Tsunami modelling projects coastal wave heights near ${Math.max(tsunami.coastalWaveHeight / 1000, 0).toFixed(1)} m with inundation reaching about ${tsunami.inundationDistanceKm.toFixed(1)} km inland.`
         : "";
 
-    return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleDeg.toFixed(0)}° and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
+    return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleDeg.toFixed(0)}ï¿½ and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
 }
 
 app.get("/api/geocode", async (req, res) => {
@@ -636,12 +848,14 @@ app.get("/api/asteroids", async (_req, res) => {
         });
         res.json({
             asteroids,
-            summary: `Fetched ${asteroids.length} near-Earth objects from NASA's NEO catalog.`
+            summary: `Fetched ${asteroids.length} objects from NASA's catalog (NEO browse).`
         });
     } catch (error) {
         res.status(500).json({ error: "Failed to load asteroid catalog", details: error.message });
     }
 });
+
+
 
 app.post("/api/simulate", async (req, res) => {
     const { location, diameter, velocity, angle, density, terrain, populationOverride } = req.body ?? {};
