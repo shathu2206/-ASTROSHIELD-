@@ -866,8 +866,15 @@ async function resolveGeology(lat, lng) {
         waterBody: reverse.isOcean ? reverse.ocean || "Open ocean" : reverse.isLake ? reverse.lake || "Lake" : null,
         timezone: reverse.timezone || null,
         highlights: highlights.filter(Boolean),
-        ocean
+        ocean,
+        fallback: reverse.fallback
+            ? {
+                  reason: reverse.fallbackReason || "Reverse geocoding service unavailable"
+              }
+            : null
     };
+
+    return geology;
 }
 
 function computeImpact({ diameter, velocity, angleDeg, density, terrainKey }) {
