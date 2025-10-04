@@ -43,6 +43,7 @@ async function fetchJson(url, options = {}) {
     return response.json();
 }
 
+
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
 }
@@ -561,7 +562,7 @@ function buildSummary(parameters, impact, location, populationInfo, tsunami) {
         ? ` Tsunami modelling projects coastal wave heights near ${Math.max(tsunami.coastalWaveHeight / 1000, 0).toFixed(1)} m with inundation reaching about ${tsunami.inundationDistanceKm.toFixed(1)} km inland.`
         : "";
 
-    return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleDeg.toFixed(0)}° and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
+    return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleDeg.toFixed(0)}ï¿½ and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
 }
 
 app.get("/api/geocode", async (req, res) => {
@@ -636,12 +637,14 @@ app.get("/api/asteroids", async (_req, res) => {
         });
         res.json({
             asteroids,
-            summary: `Fetched ${asteroids.length} near-Earth objects from NASA's NEO catalog.`
+            summary: `Fetched ${asteroids.length} objects from NASA's catalog (NEO browse).`
         });
     } catch (error) {
         res.status(500).json({ error: "Failed to load asteroid catalog", details: error.message });
     }
 });
+
+
 
 app.post("/api/simulate", async (req, res) => {
     const { location, diameter, velocity, angle, density, terrain, populationOverride } = req.body ?? {};

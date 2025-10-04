@@ -35,6 +35,7 @@ const fireballFatalitiesEl = document.getElementById("fireball-fatalities");
 const blastFatalitiesEl = document.getElementById("blast-fatalities");
 const windFatalitiesEl = document.getElementById("wind-fatalities");
 const seismicFatalitiesEl = document.getElementById("seismic-fatalities");
+const resultsCard = document.querySelector(".results-card");
 const tsunamiWaveSourceEl = document.getElementById("tsunami-wave-source");
 const tsunamiWaveCoastEl = document.getElementById("tsunami-wave-coast");
 const tsunamiRunupEl = document.getElementById("tsunami-runup");
@@ -114,8 +115,7 @@ let latestAsteroids = [];
 let selectedLocation = null;
 let populationAbortController = null;
 let mapStatusTimer = null;
-let pendingAutoRun = false;
-const autoSimulateOnPin = true;
+
 
 function formatCoordinate(lat, lng) {
     const degreeSymbol = "\u00B0";
@@ -144,6 +144,8 @@ function updateMapStatus(message, { sticky = false } = {}) {
         }, 2600);
     }
 }
+
+
 
 function initMap() {
     if (!mapContainer) return;
@@ -213,12 +215,7 @@ function placeImpactMarker(lat, lng, label) {
 
     updateFootprints([]);
 
-    if (pendingAutoRun) {
-        pendingAutoRun = false;
-        runSimulation();
-    } else if (autoSimulateOnPin) {
-        runSimulation();
-    }
+    resetResultDisplay();
 }
 
 function setImpactLocation(lat, lng, description) {
@@ -355,7 +352,7 @@ function buildGeologyPopup(geology) {
             const depthLabel = ocean.depthMeters > 0
                 ? `${Math.round(ocean.depthMeters)} m below mean sea level`
                 : `${Math.abs(Math.round(ocean.depthMeters))} m above mean sea level`;
-            parts.push(`Bathymetry: ${escapeHtml(depthLabel)}`);
+            parts.push(`Depth: ${escapeHtml(depthLabel)}`);
         }
         if (Number.isFinite(ocean.waveHeightMeters)) {
             parts.push(`Significant wave height: ${ocean.waveHeightMeters.toFixed(1)} m`);
@@ -388,21 +385,27 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
 
     if (centerEnvironmentEl) {
         const segments = [];
-        if (geology?.surfaceType) {
-            segments.push(geology.surfaceType);
-        }
-        if (geology?.landcover) {
-            segments.push(`Land cover: ${geology.landcover}`);
-        }
-        const depth = Number(geology?.ocean?.depthMeters);
-        if (Number.isFinite(depth) && depth > 0) {
-            segments.push(`Bathymetry: ${depth.toFixed(0)} m`);
-        } else if (Number.isFinite(geology?.elevationMeters)) {
-            segments.push(`Elevation: ${Math.round(geology.elevationMeters)} m`);
-        }
-        const waveHeight = Number(geology?.ocean?.waveHeightMeters);
-        if (Number.isFinite(waveHeight) && waveHeight > 0.1) {
-            segments.push(`Wave height: ${waveHeight.toFixed(1)} m`);
+               const isOceanTarget = terrainSelect?.value === "water";
+        if (isOceanTarget) {
+            const depth = Number(geology?.ocean?.depthMeters);
+            if (Number.isFinite(depth)) {
+                segments.push(`Depth: ${depth.toFixed(0)} m`);
+            }
+            const waveHeight = Number(geology?.ocean?.waveHeightMeters);
+            if (Number.isFinite(waveHeight) && waveHeight > 0.1) {
+                segments.push(`Significant wave height: ${waveHeight.toFixed(1)} m`);
+            }
+        } else {
+            if (geology?.surfaceType) {
+                segments.push(geology.surfaceType);
+            }
+            if (geology?.landcover) {
+                segments.push(`Land cover: ${geology.landcover}`);
+            }
+            const elevation = Number(geology?.elevationMeters);
+            if (Number.isFinite(elevation)) {
+                segments.push(`Elevation: ${Math.round(elevation)} m`);
+            }
         }
         centerEnvironmentEl.textContent = segments.length ? segments.join(" | ") : DEFAULT_ENVIRONMENT_TEXT;
         centerEnvironmentEl.classList.toggle("muted", segments.length === 0);
@@ -444,6 +447,24 @@ function clearResultReadouts() {
     });
 }
 
+function hideResultsCard() {
+    if (resultsCard) {
+        resultsCard.classList.add("results-card--pending");
+    }
+}
+function showResultsCard() {
+    if (resultsCard) {
+        resultsCard.classList.remove("results-card--pending");
+    }
+}
+function resetResultDisplay() {
+    hideResultsCard();
+    clearResultReadouts();
+    if (summaryText) {
+        summaryText.textContent = DEFAULT_SUMMARY_TEXT;
+    }
+}
+
 function resetSimulation() {
     if (populationAbortController) {
         populationAbortController.abort();
@@ -456,8 +477,9 @@ function resetSimulation() {
     }
     updateSizeComparison();
 
+       resetResultDisplay();
+
     selectedLocation = null;
-    pendingAutoRun = false;
 
     if (impactMarker && map) {
         map.removeLayer(impactMarker);
@@ -472,9 +494,9 @@ function resetSimulation() {
     if (centerCoordinatesEl) centerCoordinatesEl.textContent = DEFAULT_COORDINATE_TEXT;
     if (centerLabelEl) centerLabelEl.textContent = DEFAULT_COORDINATE_LABEL;
     if (locationInput) locationInput.value = "";
-    if (summaryText) summaryText.textContent = DEFAULT_SUMMARY_TEXT;
+
     if (populationSummary) populationSummary.textContent = DEFAULT_POPULATION_TEXT;
-    clearResultReadouts();
+    
 
     if (asteroidSelect) {
         asteroidSelect.value = "custom";
@@ -517,9 +539,8 @@ function formatFootprintStatValue(stat) {
             if (!Number.isFinite(value)) {
                 return "--";
             }
-            return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
-    }
-            return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+            return Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 });
+
     }
 }
 
@@ -541,33 +562,91 @@ function buildFootprintTooltip(footprint) {
     return `<div class="footprint-tooltip__inner"><div class="tooltip-heading"><span class="tooltip-title">${escapeHtml(rawTitle)}</span>${subtitle}</div>${description}${statsList}</div>`;
 }
 
+function createFootprintPolygon(center, outerRadius, innerRadius, styleOptions = {}) {
+    const [rawLat, rawLng] = center || [];
+    const safeLat = Number(rawLat);
+    const safeLng = Number(rawLng);
+    const safeOuter = Number(outerRadius);
+    if (!Number.isFinite(safeOuter) || safeOuter <= 0 || !Number.isFinite(safeLat) || !Number.isFinite(safeLng)) {
+        return null;
+    }
+    const safeInnerRadius = Number(innerRadius);
+    const safeInner = Number.isFinite(safeInnerRadius) && safeInnerRadius > 0 && safeInnerRadius < safeOuter ? safeInnerRadius : 0;
+    try {
+        const outerCircle = L.circle([safeLat, safeLng], { radius: safeOuter });
+        const outerCoords = outerCircle
+            .toGeoJSON()
+            ?.geometry?.coordinates?.[0]
+            ?.map(([coordLng, coordLat]) => [coordLat, coordLng]);
+        if (!outerCoords || !outerCoords.length) {
+            return null;
+        }
+        const rings = [outerCoords];
+        if (safeInner > 0) {
+            const innerCircle = L.circle([safeLat, safeLng], { radius: safeInner });
+            const innerCoords = innerCircle
+                .toGeoJSON()
+                ?.geometry?.coordinates?.[0]
+                ?.map(([coordLng, coordLat]) => [coordLat, coordLng]);
+            if (innerCoords && innerCoords.length) {
+                rings.push(innerCoords.reverse());
+            }
+        }
+        return L.polygon(rings, {
+            color: styleOptions.color,
+            weight: styleOptions.weight,
+            fillColor: styleOptions.fillColor,
+            fillOpacity: styleOptions.fillOpacity,
+            interactive: true,
+            stroke: true
+        });
+    } catch (error) {
+        console.error("Failed to build footprint polygon", error);
+        return L.circle([safeLat, safeLng], {
+            radius: safeOuter,
+            color: styleOptions.color,
+            weight: styleOptions.weight,
+            fillColor: styleOptions.fillColor,
+            fillOpacity: styleOptions.fillOpacity
+        });
+    }
+}
+
+
 function updateFootprints(footprints = [], location) {
     clearFootprints();
     if (!footprintLayer || !location) return;
 
-    const orderedFootprints = [...footprints].sort((a, b) => {
-        const radiusA = Number(a?.radiusMeters) || 0;
-        const radiusB = Number(b?.radiusMeters) || 0;
-        return radiusB - radiusA;
-    });
+   const orderedFootprints = [...footprints]
+        .map((footprint) => {
+            const radius = Number(footprint?.radiusMeters);
+            if (!Number.isFinite(radius) || radius <= 0) {
+                return null;
+            }
+            return { ...footprint, radiusMeters: radius };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.radiusMeters - a.radiusMeters);
 
-    orderedFootprints.forEach((footprint) => {
-        if (!footprint.radiusMeters || footprint.radiusMeters <= 0) {
-            return;
-        }
+       orderedFootprints.forEach((footprint, index) => {
+        const nextFootprint = orderedFootprints[index + 1];
+        const innerRadius = nextFootprint?.radiusMeters ?? 0;
+        const color = FOOTPRINT_COLORS[footprint.type] ?? "#ffffff";
         const style = FOOTPRINT_STYLE[footprint.type] ?? {};
         const defaultWeight = style.weight ?? 1;
         const defaultFill = style.fillOpacity ?? 0.15;
-        const circle = L.circle([location.lat, location.lng], {
-            radius: footprint.radiusMeters,
-            color: FOOTPRINT_COLORS[footprint.type] ?? "#ffffff",
+        const polygon = createFootprintPolygon([location.lat, location.lng], footprint.radiusMeters, innerRadius, {
+            color,
             weight: defaultWeight,
-            fillColor: FOOTPRINT_COLORS[footprint.type] ?? "#ffffff",
+            fillColor: color,
             fillOpacity: defaultFill
         });
+        if (!polygon) {
+            return;
+        }
         const tooltipHtml = buildFootprintTooltip(footprint);
         if (tooltipHtml) {
-            circle.bindTooltip(tooltipHtml, {
+            polygon.bindTooltip(tooltipHtml, {
                 permanent: false,
                 direction: "top",
                 sticky: true,
@@ -577,21 +656,19 @@ function updateFootprints(footprints = [], location) {
                 interactive: true
             });
         }
-        circle.on("mouseover", () => {
-            circle.setStyle({
+        polygon.on("mouseover", () => {
+            polygon.setStyle({
                 weight: defaultWeight + 1,
                 fillOpacity: Math.min(defaultFill + 0.08, 0.6)
             });
-            circle.bringToFront();
         });
-        circle.on("mouseout", () => {
-            circle.setStyle({
+        polygon.on("mouseout", () => {
+            polygon.setStyle({
                 weight: defaultWeight,
                 fillOpacity: defaultFill
             });
         });
-        footprintLayer.addLayer(circle);
-    });
+   footprintLayer.addLayer(polygon);    });
 }
 
 async function runSimulation() {
@@ -610,6 +687,9 @@ async function runSimulation() {
         populationOverride: Number(populationInput?.value ?? NaN)
     };
 
+     hideResultsCard();
+    clearResultReadouts();
+
     summaryText.textContent = "Running impact simulation...";
     try {
         const response = await fetch("/api/simulate", {
@@ -621,6 +701,8 @@ async function runSimulation() {
         const data = await response.json();
         renderResults(data);
         updateMapStatus("Simulation updated");
+                hideResultsCard();
+
     } catch (error) {
         console.error(error);
         summaryText.textContent = "Simulation failed. Check console for details.";
@@ -694,6 +776,7 @@ function renderResults(data) {
     } else {
         updateFootprints([]);
     }
+        showResultsCard();
 }
 
 async function fetchAsteroids() {
@@ -715,7 +798,7 @@ async function fetchAsteroids() {
             });
         }
         if (asteroidMeta) {
-            asteroidMeta.textContent = payload.summary ?? "Loaded near-Earth object sample.";
+            asteroidMeta.textContent = payload.summary ?? "Loaded asteroid sample from catalog.";
         }
     } catch (error) {
         console.error(error);
@@ -724,7 +807,7 @@ async function fetchAsteroids() {
         }
     } finally {
         refreshAsteroidsBtn.disabled = false;
-        refreshAsteroidsBtn.textContent = "Fetch Near-Earth Objects";
+    refreshAsteroidsBtn.textContent = "Fetch Asteroids";
     }
 }
 
@@ -764,7 +847,6 @@ async function geocode(query) {
         const data = await response.json();
         if (data?.results?.length) {
             const first = data.results[0];
-            pendingAutoRun = true;
             map.setView([first.lat, first.lng], Math.max(map.getZoom() || 3, 7), { animate: true });
             placeImpactMarker(first.lat, first.lng, first.label);
             updateMapStatus(`Impact pin dropped at ${first.label}`);
@@ -830,6 +912,9 @@ function formatCurrency(value) {
         currency: "USD",
         notation: "compact",
         maximumFractionDigits: 1
+         });
+    return formatter.format(value);
+}
 
 function formatHeight(value) {
     if (!isFinite(value) || value <= 0) {
@@ -858,9 +943,9 @@ function formatDurationMinutes(minutes) {
     }
     return `${hours} h ${Math.round(remaining)} min`;
 }
-    });
-    return formatter.format(value);
-}
+
+
+
 function formatEnergy(value) {
     if (!isFinite(value) || value <= 0) {
         return "--";
@@ -947,6 +1032,12 @@ if (asteroidSelect) {
     });
 }
 
+if (terrainSelect) {
+    terrainSelect.addEventListener("change", () => {
+        applyGeologyToUI(latestGeology, { openPopup: false });
+    });
+}
+
 if (refreshAsteroidsBtn) {
     refreshAsteroidsBtn.addEventListener("click", () => {
         fetchAsteroids();
@@ -963,6 +1054,8 @@ if (locationForm) {
 initMap();
 fetchAsteroids();
 updateSizeComparison();
+    resetResultDisplay();
+
 
 
 
