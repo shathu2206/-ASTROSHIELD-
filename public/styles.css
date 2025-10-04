@@ -53,8 +53,6 @@ body {
     z-index: 2;
 }
 
-
-
 .map-search {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -418,7 +416,6 @@ strong {
     color: rgba(255, 255, 255, 0.6);
 }
 
-
 @media (max-width: 1160px) {
     body {
         overflow: auto;
@@ -455,7 +452,3 @@ strong {
         font-size: 0.75rem;
     }
 }
-
-/* Orbit page specific tweaks */
-.orbit-canvas-wrap canvas { width:100% !important; height:100% !important; display:block; }
-

@@ -1,0 +1,82 @@
+[
+  {
+    "name": "99942 Apophis",
+    "designation": "99942",
+    "diameter": 370,
+    "velocity": 31,
+    "density": 3200,
+    "impactAngle": 45,
+    "absoluteMagnitude": 19.7,
+    "source": "neo"
+  },
+  {
+    "name": "(29075) 1950 DA",
+    "designation": "1950 DA",
+    "diameter": 1200,
+    "velocity": 26,
+    "density": 3500,
+    "impactAngle": 45,
+    "absoluteMagnitude": 16.8,
+    "source": "neo"
+  },
+  {
+    "name": "101955 Bennu",
+    "designation": "101955",
+    "diameter": 492,
+    "velocity": 28,
+    "density": 1190,
+    "impactAngle": 45,
+    "absoluteMagnitude": 20.6,
+    "source": "neo"
+  },
+  {
+    "name": "(153814) 2001 WN5",
+    "designation": "2001 WN5",
+    "diameter": 950,
+    "velocity": 23,
+    "density": 3000,
+    "impactAngle": 45,
+    "absoluteMagnitude": 18.2,
+    "source": "neo"
+  },
+  {
+    "name": "(4179) Toutatis",
+    "designation": "4179",
+    "diameter": 2700,
+    "velocity": 18,
+    "density": 2500,
+    "impactAngle": 45,
+    "absoluteMagnitude": 15.3,
+    "source": "neo"
+  },
+  {
+    "name": "1P/Halley",
+    "designation": "1P",
+    "diameter": 11000,
+    "velocity": 71,
+    "density": 600,
+    "impactAngle": 45,
+    "absoluteMagnitude": 5.5,
+    "source": "comet"
+  },
+  {
+    "name": "C/2013 A1 Siding Spring",
+    "designation": "C/2013 A1",
+    "diameter": 2000,
+    "velocity": 56,
+    "density": 500,
+    "impactAngle": 45,
+    "absoluteMagnitude": 8.9,
+    "source": "comet"
+  },
+  {
+    "name": "(99907) 1989 VA",
+    "designation": "1989 VA",
+    "diameter": 460,
+    "velocity": 35,
+    "density": 3100,
+    "impactAngle": 45,
+    "absoluteMagnitude": 19.9,
+    "source": "neo"
+  }
+]

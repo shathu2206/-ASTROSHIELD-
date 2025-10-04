@@ -1,11 +1,10 @@
-import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 const mapContainer = document.getElementById("map");
 const mapStatusEl = document.getElementById("map-status");
 const centerCoordinatesEl = document.getElementById("center-coordinates");
 const centerLabelEl = document.getElementById("center-label");
 const centerEnvironmentEl = document.getElementById("center-environment");
 const sizeComparisonEl = document.getElementById("size-comparison");
+
 const form = document.getElementById("config-form");
 const populationInput = document.getElementById("population");
 const diameterInput = document.getElementById("diameter");
@@ -13,25 +12,23 @@ const velocityInput = document.getElementById("velocity");
 const angleInput = document.getElementById("angle");
 const densitySelect = document.getElementById("density");
 const terrainSelect = document.getElementById("terrain");
+
 const summaryText = document.getElementById("summary-text");
 const populationSummary = document.getElementById("population-summary");
 const asteroidSelect = document.getElementById("asteroid-select");
 const asteroidMeta = document.getElementById("asteroid-meta");
+const resultsCard = document.querySelector(".results-card");
 const refreshAsteroidsBtn = document.getElementById("refresh-asteroids");
 const locationForm = document.getElementById("location-form");
 const locationInput = document.getElementById("location-query");
 const resetButton = document.getElementById("reset-form");
-const objectSearchForm = document.getElementById("object-search-form");
-const objectQueryInput = document.getElementById("object-query");
-const orbitStatusEl = document.getElementById("orbit-status");
-const orbitViewerEl = document.getElementById("orbit-viewer");
+
 const craterDiameterEl = document.getElementById("crater-diameter");
 const craterDepthEl = document.getElementById("crater-depth");
 const fireballEl = document.getElementById("fireball");
 const shockwaveEl = document.getElementById("shockwave");
 const windEl = document.getElementById("wind");
 const richterEl = document.getElementById("richter");
-const earthquakeAnalogEl = document.getElementById("earthquake-analog");
 const severeDamageEl = document.getElementById("severe-damage");
 const brokenWindowsEl = document.getElementById("broken-windows");
 const economicLossEl = document.getElementById("economic-loss");
@@ -51,8 +48,6 @@ const DEFAULT_COORDINATE_TEXT = centerCoordinatesEl?.textContent ?? "No impact l
 const DEFAULT_COORDINATE_LABEL = centerLabelEl?.textContent ?? "";
 const DEFAULT_ENVIRONMENT_TEXT = centerEnvironmentEl?.textContent ?? "Surface context unavailable.";
 const DEFAULT_ASTEROID_META = asteroidMeta?.textContent ?? "Using manually configured parameters.";
-const DEFAULT_ORBIT_STATUS =
-    orbitStatusEl?.textContent ?? "Load an object preset or search by designation to render its 3D asteroid or comet orbit.";
 const DEFAULT_MAP_VIEW = { center: [20, 0], zoom: 3 };
 const RESULT_FIELDS = [
     craterDiameterEl,
@@ -61,7 +56,6 @@ const RESULT_FIELDS = [
     shockwaveEl,
     windEl,
     richterEl,
-    earthquakeAnalogEl,
     severeDamageEl,
     brokenWindowsEl,
     economicLossEl,
@@ -76,6 +70,8 @@ const RESULT_FIELDS = [
     tsunamiReachEl,
     tsunamiFatalitiesEl
 ];
+
+
 const FOOTPRINT_COLORS = {
     crater: "#ffb347",
     fireball: "#ff8a47",
@@ -85,6 +81,7 @@ const FOOTPRINT_COLORS = {
     tremor: "#7b61ff",
     tsunami: "#69d8ff"
 };
+
 const FOOTPRINT_STYLE = {
     crater: { fillOpacity: 0.32, weight: 2.2 },
     fireball: { fillOpacity: 0.24, weight: 1.8 },
@@ -94,6 +91,7 @@ const FOOTPRINT_STYLE = {
     tremor: { fillOpacity: 0.1, weight: 0.7 },
     tsunami: { fillOpacity: 0.14, weight: 1.4 }
 };
+
 const SIZE_REFERENCES = [
     { size: 12, label: "a city bus (~12 m long)" },
     { size: 25, label: "a blue whale (~25 m long)" },
@@ -108,8 +106,7 @@ const SIZE_REFERENCES = [
     { size: 8849, label: "Mount Everest (8,849 m tall)" },
     { size: 77000, label: "the width of Rhode Island (~77 km)" }
 ];
-const ORBIT_SCALE = 55;
-const ORBIT_SEGMENTS = 256;
+
 let latestGeology = null;
 let map = null;
 let impactMarker = null;
@@ -120,9 +117,7 @@ let populationAbortController = null;
 let mapStatusTimer = null;
 let pendingAutoRun = false;
 const autoSimulateOnPin = true;
-let orbitRenderer = null;
-let orbitAnimationFrame = null;
-let currentOrbit = null;
+
 function formatCoordinate(lat, lng) {
     const degreeSymbol = "\u00B0";
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -130,9 +125,8 @@ function formatCoordinate(lat, lng) {
     }
     return lat.toFixed(5) + degreeSymbol + ", " + lng.toFixed(5) + degreeSymbol;
 }
-function clamp(value, min, max) {
-    return Math.min(Math.max(value, min), max);
-}
+
+
 function updateMapStatus(message, { sticky = false } = {}) {
     if (!mapStatusEl) return;
     if (mapStatusTimer) {
@@ -151,302 +145,53 @@ function updateMapStatus(message, { sticky = false } = {}) {
         }, 2600);
     }
 }
-function updateOrbitStatus(message, { error = false } = {}) {
-    if (!orbitStatusEl) return;
-    const text = message || DEFAULT_ORBIT_STATUS;
-    orbitStatusEl.textContent = text;
-    if (error) {
-        orbitStatusEl.classList.add("error");
-    } else {
-        orbitStatusEl.classList.remove("error");
-    }
-}
-function initOrbitRenderer() {
-    if (!orbitViewerEl) return null;
-    if (orbitRenderer) return orbitRenderer;
-    const width = orbitViewerEl.clientWidth || orbitViewerEl.offsetWidth || 420;
-    const height = orbitViewerEl.clientHeight || 260;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
-    renderer.setSize(width, height);
-    orbitViewerEl.innerHTML = "";
-    orbitViewerEl.appendChild(renderer.domElement);
-    const scene = new THREE.Scene();
-    scene.background = null;
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 2000);
-    camera.position.set(0, 40, 120);
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.enablePan = false;
-    controls.dampingFactor = 0.08;
-    controls.minDistance = 12;
-    controls.maxDistance = 420;
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambient);
-    const directional = new THREE.DirectionalLight(0xffffff, 0.95);
-    directional.position.set(30, 40, 20);
-    scene.add(directional);
-    const earthGeometry = new THREE.SphereGeometry(5, 48, 48);
-    const earthMaterial = new THREE.MeshPhongMaterial({ color: 0x1a4ed8, emissive: 0x061533, shininess: 25 });
-    const earth = new THREE.Mesh(earthGeometry, earthMaterial);
-    scene.add(earth);
-    const equator = new THREE.RingGeometry(5.02, 5.25, 90);
-    const equatorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.28, side: THREE.DoubleSide });
-    const equatorMesh = new THREE.Mesh(equator, equatorMaterial);
-    equatorMesh.rotation.x = Math.PI / 2;
-    earth.add(equatorMesh);
-    const orbitPlane = new THREE.CircleGeometry(60, 120);
-    const orbitPlaneMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.03, side: THREE.DoubleSide });
-    const orbitPlaneMesh = new THREE.Mesh(orbitPlane, orbitPlaneMat);
-    orbitPlaneMesh.rotation.x = Math.PI / 2;
-    scene.add(orbitPlaneMesh);
-    const orbitGroup = new THREE.Group();
-    scene.add(orbitGroup);
-    const animate = () => {
-        orbitAnimationFrame = requestAnimationFrame(animate);
-        controls.update();
-        renderer.render(scene, camera);
-    };
-    animate();
-    const handleResize = () => {
-        if (!orbitViewerEl) return;
-        const newWidth = orbitViewerEl.clientWidth || orbitViewerEl.offsetWidth || width;
-        const newHeight = orbitViewerEl.clientHeight || height;
-        renderer.setSize(newWidth, newHeight);
-        camera.aspect = newWidth / newHeight;
-        camera.updateProjectionMatrix();
-    };
-    window.addEventListener("resize", handleResize);
-    orbitRenderer = { renderer, scene, camera, controls, earth, orbitGroup, handleResize };
-    return orbitRenderer;
-}
-function clearOrbitVisualization() {
-    if (!orbitRenderer?.orbitGroup) return;
-    while (orbitRenderer.orbitGroup.children.length > 0) {
-        const child = orbitRenderer.orbitGroup.children.pop();
-        if (child.geometry?.dispose) child.geometry.dispose();
-        if (child.material?.dispose) child.material.dispose();
-    }
-    currentOrbit = null;
-}
-function wrapAngleRadians(angle) {
-    const twoPi = Math.PI * 2;
-    return ((angle % twoPi) + twoPi) % twoPi;
-}
-function degreesToRadians(value) {
-    return (value * Math.PI) / 180;
-}
-function solveKepler(eccentricity, meanAnomaly) {
-    const e = clamp(Number(eccentricity) || 0, 0, 0.999999);
-    let M = wrapAngleRadians(meanAnomaly);
-    let E = e < 0.8 ? M : Math.PI;
-    const tolerance = 1e-6;
-    for (let i = 0; i < 30; i += 1) {
-        const f = E - e * Math.sin(E) - M;
-        const fPrime = 1 - e * Math.cos(E);
-        const delta = f / fPrime;
-        E -= delta;
-        if (Math.abs(delta) <= tolerance) {
-            break;
-        }
-    }
-    return wrapAngleRadians(E);
-}
-function julianDate(date = new Date()) {
-    const ms = date.getTime();
-    return ms / 86400000 + 2440587.5;
-}
-function orbitalPositionFromTrueAnomaly(elements, trueAnomaly) {
-    const a = Number(elements?.semiMajorAxisAu) || 1;
-    const e = clamp(Number(elements?.eccentricity) || 0, 0, 0.999999);
-    const inclination = degreesToRadians(Number(elements?.inclinationDeg) || 0);
-    const ascNode = degreesToRadians(Number(elements?.ascendingNodeDeg) || 0);
-    const argPerihelion = degreesToRadians(Number(elements?.argPerihelionDeg) || 0);
-    const r = (a * (1 - e ** 2)) / (1 + e * Math.cos(trueAnomaly));
-    const argument = argPerihelion + trueAnomaly;
-    const cosO = Math.cos(ascNode);
-    const sinO = Math.sin(ascNode);
-    const cosI = Math.cos(inclination);
-    const sinI = Math.sin(inclination);
-    const cosW = Math.cos(argument);
-    const sinW = Math.sin(argument);
-    const x = r * (cosO * cosW - sinO * sinW * cosI);
-    const y = r * (sinO * cosW + cosO * sinW * cosI);
-    const z = r * (sinW * sinI);
-    return { x, y, z, radius: r };
-}
-function propagateTrueAnomaly(elements) {
-    const e = clamp(Number(elements?.eccentricity) || 0, 0, 0.999999);
-    const a = Number(elements?.semiMajorAxisAu) || 1;
-    const meanAnomalyDeg = Number(elements?.meanAnomalyDeg) || 0;
-    const meanMotionDegPerDay = Number(elements?.meanMotionDegPerDay);
-    const periodDays = Number(elements?.periodDays);
-    const epoch = Number(elements?.epochJulian);
-    let meanAnomaly = degreesToRadians(meanAnomalyDeg);
-    let deltaDays = 0;
-    let meanMotion = Number.isFinite(periodDays) && periodDays > 0 ? (Math.PI * 2) / periodDays : null;
-    if (!meanMotion && Number.isFinite(meanMotionDegPerDay)) {
-        meanMotion = degreesToRadians(meanMotionDegPerDay);
-    }
-    if (meanMotion && Number.isFinite(epoch)) {
-        deltaDays = julianDate() - epoch;
-        meanAnomaly += meanMotion * deltaDays;
-    }
-    meanAnomaly = wrapAngleRadians(meanAnomaly);
-    const eccentricAnomaly = solveKepler(e, meanAnomaly);
-    const trueAnomaly = 2 * Math.atan2(
-        Math.sqrt(1 + e) * Math.sin(eccentricAnomaly / 2),
-        Math.sqrt(1 - e) * Math.cos(eccentricAnomaly / 2)
-    );
-    const radiusAu = a * (1 - e * Math.cos(eccentricAnomaly));
-    return { trueAnomaly: wrapAngleRadians(trueAnomaly), radiusAu, meanAnomaly, deltaDays };
-}
-function formatOrbitNumber(value, { digits = 3, fallback = "--" } = {}) {
-    if (!Number.isFinite(value)) return fallback;
-    return value.toFixed(digits);
-}
-function updateOrbitVisualization(elements, metadata = {}) {
-    if (!orbitViewerEl) return;
-    if (!elements || !Number.isFinite(elements.semiMajorAxisAu)) {
-        clearOrbitVisualization();
-        updateOrbitStatus("Orbital elements unavailable.", { error: true });
-        return;
-    }
-    const renderer = initOrbitRenderer();
-    if (!renderer) return;
-    clearOrbitVisualization();
-    const orbitPoints = [];
-    for (let i = 0; i <= ORBIT_SEGMENTS; i += 1) {
-        const fraction = i / ORBIT_SEGMENTS;
-        const trueAnomaly = fraction * Math.PI * 2;
-        const position = orbitalPositionFromTrueAnomaly(elements, trueAnomaly);
-        orbitPoints.push(new THREE.Vector3(position.x * ORBIT_SCALE, position.z * ORBIT_SCALE, position.y * ORBIT_SCALE));
-    }
-    const pathGeometry = new THREE.BufferGeometry().setFromPoints(orbitPoints);
-    const pathMaterial = new THREE.LineBasicMaterial({ color: 0xffb347 });
-    const orbitPath = new THREE.LineLoop(pathGeometry, pathMaterial);
-    renderer.orbitGroup.add(orbitPath);
-    const propagation = propagateTrueAnomaly(elements);
-    const currentPosition = orbitalPositionFromTrueAnomaly(elements, propagation.trueAnomaly);
-    const asteroidGeometry = new THREE.SphereGeometry(1.6, 28, 28);
-    const asteroidMaterial = new THREE.MeshPhongMaterial({ color: 0xff7043, emissive: 0x24120a, shininess: 12 });
-    const asteroidMesh = new THREE.Mesh(asteroidGeometry, asteroidMaterial);
-    asteroidMesh.position.set(currentPosition.x * ORBIT_SCALE, currentPosition.z * ORBIT_SCALE, currentPosition.y * ORBIT_SCALE);
-    renderer.orbitGroup.add(asteroidMesh);
-    currentOrbit = { elements, metadata, propagation };
-    const name = metadata?.fullname || metadata?.name || metadata?.designation || metadata?.label || "Loaded object";
-    const e = Number(elements.eccentricity) || 0;
-    const a = Number(elements.semiMajorAxisAu) || 0;
-    const perihelion = a * (1 - e);
-    const aphelion = a * (1 + e);
-    const periodYears = Number.isFinite(elements.periodDays) ? elements.periodDays / 365.25 : null;
-    const hazardProbability = Number(metadata?.hazardProbability);
-    const palermoScale = Number(metadata?.palermoScale);
-    const orbitClassCode = metadata?.orbitClass?.code || metadata?.orbitClassCode;
-    const orbitClassName = metadata?.orbitClass?.name || metadata?.orbitClassName;
-    const moidAu = Number(metadata?.moidAu);
-    const pieces = [
-        `${name} orbit loaded`,
-        `a=${formatOrbitNumber(a)} au`,
-        `e=${formatOrbitNumber(e, { digits: 3 })}`
-    ];
-    if (orbitClassCode || orbitClassName) {
-        const orbitLabel = orbitClassCode && orbitClassName ? `${orbitClassCode} (${orbitClassName})` : orbitClassCode || orbitClassName;
-        pieces.push(`Class ${orbitLabel}`);
-    }
-    pieces.push(`q=${formatOrbitNumber(perihelion)} au`, `Q=${formatOrbitNumber(aphelion)} au`);
-    if (Number.isFinite(propagation.radiusAu)) {
-        pieces.push(`r=${formatOrbitNumber(propagation.radiusAu)} au`);
-    }
-    if (Number.isFinite(moidAu)) {
-        pieces.push(`MOID=${formatOrbitNumber(moidAu, { digits: 3 })} au`);
-    }
-    pieces.push(`ν=${formatOrbitNumber((propagation.trueAnomaly * 180) / Math.PI, { digits: 1 })}°`);
-    if (Number.isFinite(periodYears)) {
-        pieces.push(`P=${formatOrbitNumber(periodYears, { digits: 2 })} yr`);
-    }
-    if (Number.isFinite(hazardProbability) && hazardProbability > 0) {
-        pieces.push(`IP=${hazardProbability.toExponential(2)}`);
-    }
-    if (Number.isFinite(palermoScale)) {
-        pieces.push(`Palermo ${palermoScale.toFixed(2)}`);
-    }
-    if (metadata?.pha) {
-        pieces.push("Potentially hazardous");
-    }
-    updateOrbitStatus(pieces.join(" • "));
-}
-async function loadOrbitByQuery(query, { label, meta } = {}) {
-    const trimmed = query?.trim();
-    if (!trimmed) {
-        clearOrbitVisualization();
-        updateOrbitStatus(DEFAULT_ORBIT_STATUS);
-        return null;
-    }
-    updateOrbitStatus(`Loading orbital solution for ${label || trimmed}...`);
-    try {
-        const params = new URLSearchParams({ sstr: trimmed });
-        const response = await fetch(`/api/orbit?${params.toString()}`);
-        if (!response.ok) throw new Error("Orbit lookup failed");
-        const payload = await response.json();
-        const combinedMeta = { ...(payload.object ?? {}), ...(meta ?? {}) };
-        updateOrbitVisualization(payload.orbit, combinedMeta);
-        return payload;
-    } catch (error) {
-        console.error(error);
-        if (meta?.precomputedOrbit) {
-            updateOrbitVisualization(meta.precomputedOrbit, meta);
-            updateOrbitStatus(`Using catalog orbital elements for ${label || trimmed}.`);
-            return { orbit: meta.precomputedOrbit, object: meta, fallback: true };
-        }
-        updateOrbitStatus(`Failed to load orbital data for ${label || trimmed}.`, { error: true });
-        clearOrbitVisualization();
-        return null;
-    }
-}
+
 function initMap() {
     if (!mapContainer) return;
+
     updateMapStatus("Loading satellite tiles...", { sticky: true });
+
     map = L.map(mapContainer, {
         center: [...DEFAULT_MAP_VIEW.center],
         zoom: DEFAULT_MAP_VIEW.zoom,
         minZoom: 2,
-        maxZoom: 9,
+        maxZoom: 18,
         worldCopyJump: true,
         zoomControl: true
     });
+
     const imagery = L.tileLayer(
-        "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief/default/2024-01-01/GoogleMapsCompatible_Level{z}/{y}/{x}.jpg",
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         {
-            maxZoom: 9,
-            tileSize: 256,
-            zoomOffset: 0,
-            attribution: "Imagery: NASA Blue Marble via GIBS"
+            maxZoom: 19,
+            attribution: "Tiles (c) Esri - Source: Esri, Maxar, Earthstar Geographics"
         }
     );
     imagery.addTo(map);
+
     const labels = L.tileLayer(
-        "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/Reference_Features/default/2024-01-01/GoogleMapsCompatible_Level{z}/{y}/{x}.png",
+        "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
         {
-            maxZoom: 9,
-            tileSize: 256,
-            zoomOffset: 0,
-            opacity: 0.75,
-            attribution: "Boundaries: NASA Reference Features via GIBS"
+            maxZoom: 19,
+            attribution: "Boundaries & labels (c) Esri"
         }
     );
     labels.addTo(map);
+
     footprintLayer = L.layerGroup().addTo(map);
+
     map.whenReady(() => {
         updateMapStatus("Left-click to drop an impact pin.");
         setTimeout(() => {
             map.invalidateSize();
         }, 200);
     });
+
     map.on("click", (event) => {
         if (!event || !event.latlng) return;
         placeImpactMarker(event.latlng.lat, event.latlng.lng, null);
     });
+
     window.addEventListener("resize", () => {
         if (map) {
             map.invalidateSize();
@@ -469,7 +214,12 @@ function placeImpactMarker(lat, lng, label) {
 
     updateFootprints([]);
 
-    resetResultDisplay();
+    if (pendingAutoRun) {
+        pendingAutoRun = false;
+        runSimulation();
+    } else if (autoSimulateOnPin) {
+        runSimulation();
+    }
 }
 
 function setImpactLocation(lat, lng, description) {
@@ -606,7 +356,7 @@ function buildGeologyPopup(geology) {
             const depthLabel = ocean.depthMeters > 0
                 ? `${Math.round(ocean.depthMeters)} m below mean sea level`
                 : `${Math.abs(Math.round(ocean.depthMeters))} m above mean sea level`;
-            parts.push(`Depth: ${escapeHtml(depthLabel)}`);
+            parts.push(`Bathymetry: ${escapeHtml(depthLabel)}`);
         }
         if (Number.isFinite(ocean.waveHeightMeters)) {
             parts.push(`Significant wave height: ${ocean.waveHeightMeters.toFixed(1)} m`);
@@ -639,27 +389,24 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
 
     if (centerEnvironmentEl) {
         const segments = [];
-               const isOceanTarget = terrainSelect?.value === "water";
-        if (isOceanTarget) {
-            const depth = Number(geology?.ocean?.depthMeters);
-            if (Number.isFinite(depth)) {
-                segments.push(`Depth: ${depth.toFixed(0)} m`);
-            }
-            const waveHeight = Number(geology?.ocean?.waveHeightMeters);
-            if (Number.isFinite(waveHeight) && waveHeight > 0.1) {
-                segments.push(`Significant wave height: ${waveHeight.toFixed(1)} m`);
-            }
-        } else {
-            if (geology?.surfaceType) {
-                segments.push(geology.surfaceType);
-            }
-            if (geology?.landcover) {
-                segments.push(`Land cover: ${geology.landcover}`);
-            }
-            const elevation = Number(geology?.elevationMeters);
-            if (Number.isFinite(elevation)) {
-                segments.push(`Elevation: ${Math.round(elevation)} m`);
-            }
+        if (geology?.surfaceType) {
+            segments.push(geology.surfaceType);
+        }
+        if (geology?.landcover) {
+            segments.push(`Land cover: ${geology.landcover}`);
+        }
+        const depth = Number(geology?.ocean?.depthMeters);
+        if (Number.isFinite(depth) && depth > 0) {
+            segments.push(`Bathymetry: ${depth.toFixed(0)} m`);
+        } else if (Number.isFinite(geology?.elevationMeters)) {
+            segments.push(`Elevation: ${Math.round(geology.elevationMeters)} m`);
+        }
+        const waveHeight = Number(geology?.ocean?.waveHeightMeters);
+        if (Number.isFinite(waveHeight) && waveHeight > 0.1) {
+            segments.push(`Wave height: ${waveHeight.toFixed(1)} m`);
+        }
+        if (geology?.fallback) {
+            segments.push("Surface data approximated");
         }
         centerEnvironmentEl.textContent = segments.length ? segments.join(" | ") : DEFAULT_ENVIRONMENT_TEXT;
         centerEnvironmentEl.classList.toggle("muted", segments.length === 0);
@@ -678,6 +425,10 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
     impactMarker.bindPopup(popupHtml, { closeButton: true, autoClose: false });
     if (openPopup) {
         impactMarker.openPopup();
+    }
+
+    if (geology?.fallback?.reason) {
+        updateMapStatus(`Location context approximated: ${geology.fallback.reason}`, { sticky: true });
     }
 }
 
@@ -701,24 +452,6 @@ function clearResultReadouts() {
     });
 }
 
-function hideResultsCard() {
-    if (resultsCard) {
-        resultsCard.classList.add("results-card--pending");
-    }
-}
-function showResultsCard() {
-    if (resultsCard) {
-        resultsCard.classList.remove("results-card--pending");
-    }
-}
-function resetResultDisplay() {
-    hideResultsCard();
-    clearResultReadouts();
-    if (summaryText) {
-        summaryText.textContent = DEFAULT_SUMMARY_TEXT;
-    }
-}
-
 function resetSimulation() {
     if (populationAbortController) {
         populationAbortController.abort();
@@ -731,9 +464,8 @@ function resetSimulation() {
     }
     updateSizeComparison();
 
-       resetResultDisplay();
-
     selectedLocation = null;
+    pendingAutoRun = false;
 
     if (impactMarker && map) {
         map.removeLayer(impactMarker);
@@ -748,9 +480,9 @@ function resetSimulation() {
     if (centerCoordinatesEl) centerCoordinatesEl.textContent = DEFAULT_COORDINATE_TEXT;
     if (centerLabelEl) centerLabelEl.textContent = DEFAULT_COORDINATE_LABEL;
     if (locationInput) locationInput.value = "";
-
+    if (summaryText) summaryText.textContent = DEFAULT_SUMMARY_TEXT;
     if (populationSummary) populationSummary.textContent = DEFAULT_POPULATION_TEXT;
-    
+    clearResultReadouts();
 
     if (asteroidSelect) {
         asteroidSelect.value = "custom";
@@ -793,8 +525,9 @@ function formatFootprintStatValue(stat) {
             if (!Number.isFinite(value)) {
                 return "--";
             }
-            return Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 });
-
+            return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+    }
+            return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
     }
 }
 
@@ -816,91 +549,33 @@ function buildFootprintTooltip(footprint) {
     return `<div class="footprint-tooltip__inner"><div class="tooltip-heading"><span class="tooltip-title">${escapeHtml(rawTitle)}</span>${subtitle}</div>${description}${statsList}</div>`;
 }
 
-function createFootprintPolygon(center, outerRadius, innerRadius, styleOptions = {}) {
-    const [rawLat, rawLng] = center || [];
-    const safeLat = Number(rawLat);
-    const safeLng = Number(rawLng);
-    const safeOuter = Number(outerRadius);
-    if (!Number.isFinite(safeOuter) || safeOuter <= 0 || !Number.isFinite(safeLat) || !Number.isFinite(safeLng)) {
-        return null;
-    }
-    const safeInnerRadius = Number(innerRadius);
-    const safeInner = Number.isFinite(safeInnerRadius) && safeInnerRadius > 0 && safeInnerRadius < safeOuter ? safeInnerRadius : 0;
-    try {
-        const outerCircle = L.circle([safeLat, safeLng], { radius: safeOuter });
-        const outerCoords = outerCircle
-            .toGeoJSON()
-            ?.geometry?.coordinates?.[0]
-            ?.map(([coordLng, coordLat]) => [coordLat, coordLng]);
-        if (!outerCoords || !outerCoords.length) {
-            return null;
-        }
-        const rings = [outerCoords];
-        if (safeInner > 0) {
-            const innerCircle = L.circle([safeLat, safeLng], { radius: safeInner });
-            const innerCoords = innerCircle
-                .toGeoJSON()
-                ?.geometry?.coordinates?.[0]
-                ?.map(([coordLng, coordLat]) => [coordLat, coordLng]);
-            if (innerCoords && innerCoords.length) {
-                rings.push(innerCoords.reverse());
-            }
-        }
-        return L.polygon(rings, {
-            color: styleOptions.color,
-            weight: styleOptions.weight,
-            fillColor: styleOptions.fillColor,
-            fillOpacity: styleOptions.fillOpacity,
-            interactive: true,
-            stroke: true
-        });
-    } catch (error) {
-        console.error("Failed to build footprint polygon", error);
-        return L.circle([safeLat, safeLng], {
-            radius: safeOuter,
-            color: styleOptions.color,
-            weight: styleOptions.weight,
-            fillColor: styleOptions.fillColor,
-            fillOpacity: styleOptions.fillOpacity
-        });
-    }
-}
-
-
 function updateFootprints(footprints = [], location) {
     clearFootprints();
     if (!footprintLayer || !location) return;
 
-   const orderedFootprints = [...footprints]
-        .map((footprint) => {
-            const radius = Number(footprint?.radiusMeters);
-            if (!Number.isFinite(radius) || radius <= 0) {
-                return null;
-            }
-            return { ...footprint, radiusMeters: radius };
-        })
-        .filter(Boolean)
-        .sort((a, b) => b.radiusMeters - a.radiusMeters);
+    const orderedFootprints = [...footprints].sort((a, b) => {
+        const radiusA = Number(a?.radiusMeters) || 0;
+        const radiusB = Number(b?.radiusMeters) || 0;
+        return radiusB - radiusA;
+    });
 
-       orderedFootprints.forEach((footprint, index) => {
-        const nextFootprint = orderedFootprints[index + 1];
-        const innerRadius = nextFootprint?.radiusMeters ?? 0;
-        const color = FOOTPRINT_COLORS[footprint.type] ?? "#ffffff";
+    orderedFootprints.forEach((footprint) => {
+        if (!footprint.radiusMeters || footprint.radiusMeters <= 0) {
+            return;
+        }
         const style = FOOTPRINT_STYLE[footprint.type] ?? {};
         const defaultWeight = style.weight ?? 1;
         const defaultFill = style.fillOpacity ?? 0.15;
-        const polygon = createFootprintPolygon([location.lat, location.lng], footprint.radiusMeters, innerRadius, {
-            color,
+        const circle = L.circle([location.lat, location.lng], {
+            radius: footprint.radiusMeters,
+            color: FOOTPRINT_COLORS[footprint.type] ?? "#ffffff",
             weight: defaultWeight,
-            fillColor: color,
+            fillColor: FOOTPRINT_COLORS[footprint.type] ?? "#ffffff",
             fillOpacity: defaultFill
         });
-        if (!polygon) {
-            return;
-        }
         const tooltipHtml = buildFootprintTooltip(footprint);
         if (tooltipHtml) {
-            polygon.bindTooltip(tooltipHtml, {
+            circle.bindTooltip(tooltipHtml, {
                 permanent: false,
                 direction: "top",
                 sticky: true,
@@ -910,19 +585,21 @@ function updateFootprints(footprints = [], location) {
                 interactive: true
             });
         }
-        polygon.on("mouseover", () => {
-            polygon.setStyle({
+        circle.on("mouseover", () => {
+            circle.setStyle({
                 weight: defaultWeight + 1,
                 fillOpacity: Math.min(defaultFill + 0.08, 0.6)
             });
+            circle.bringToFront();
         });
-        polygon.on("mouseout", () => {
-            polygon.setStyle({
+        circle.on("mouseout", () => {
+            circle.setStyle({
                 weight: defaultWeight,
                 fillOpacity: defaultFill
             });
         });
-   footprintLayer.addLayer(polygon);    });
+        footprintLayer.addLayer(circle);
+    });
 }
 
 async function runSimulation() {
@@ -941,9 +618,6 @@ async function runSimulation() {
         populationOverride: Number(populationInput?.value ?? NaN)
     };
 
-     hideResultsCard();
-    clearResultReadouts();
-
     summaryText.textContent = "Running impact simulation...";
     try {
         const response = await fetch("/api/simulate", {
@@ -955,8 +629,6 @@ async function runSimulation() {
         const data = await response.json();
         renderResults(data);
         updateMapStatus("Simulation updated");
-                hideResultsCard();
-
     } catch (error) {
         console.error(error);
         summaryText.textContent = "Simulation failed. Check console for details.";
@@ -973,8 +645,7 @@ function renderResults(data) {
         footprints = [],
         location,
         geology,
-        tsunami,
-        analogs
+        tsunami
     } = data ?? {};
 
     applyGeologyToUI(geology ?? latestGeology, { openPopup: false });
@@ -993,17 +664,7 @@ function renderResults(data) {
     shockwaveEl.textContent = formatDistance(impact?.shockwaveRadius ?? NaN);
     windEl.textContent = formatWind(impact?.peakWind ?? NaN);
     richterEl.textContent = formatMagnitude(impact?.richterMagnitude ?? NaN);
- if (earthquakeAnalogEl) {
-        const analog = analogs?.earthquake;
-        if (analog?.title || Number.isFinite(analog?.magnitude)) {
-            const magnitude = Number.isFinite(analog?.magnitude) ? `M${analog.magnitude.toFixed(1)}` : null;
-            const year = analog?.year ? ` (${analog.year})` : "";
-            const place = analog?.title ?? "Comparable event";
-            earthquakeAnalogEl.textContent = [magnitude, place].filter(Boolean).join(" ") + year;
-        } else {
-            earthquakeAnalogEl.textContent = "--";
-        }
-    }
+
     severeDamageEl.textContent = formatDistance(infrastructure?.severeDamageRadius ?? NaN);
     brokenWindowsEl.textContent = formatDistance(infrastructure?.windowDamageRadius ?? NaN);
     economicLossEl.textContent = formatCurrency(infrastructure?.economicLoss ?? NaN);
@@ -1041,13 +702,12 @@ function renderResults(data) {
     } else {
         updateFootprints([]);
     }
-        showResultsCard();
 }
 
 async function fetchAsteroids() {
     if (!refreshAsteroidsBtn) return;
     refreshAsteroidsBtn.disabled = true;
-    refreshAsteroidsBtn.textContent = "Loading datasets...";
+    refreshAsteroidsBtn.textContent = "Loading...";
     try {
         const response = await fetch("/api/asteroids");
         if (!response.ok) throw new Error("Failed to load asteroids");
@@ -1058,23 +718,12 @@ async function fetchAsteroids() {
             latestAsteroids.forEach((asteroid, index) => {
                 const option = document.createElement("option");
                 option.value = index;
-                               const descriptor =
-                    asteroid.source === "sentry"
-                        ? "Sentry monitored"
-                        : asteroid.source === "comet"
-                        ? "Near-Earth comet"
-                        : asteroid.source === "sbdb"
-                        ? "SBDB"
-                        : "NEO";
-                const diameterLabel = Number.isFinite(asteroid.diameter)
-                    ? `${Math.round(asteroid.diameter)} m`
-                    : "size unknown";
-                option.textContent = `${asteroid.name} • ${descriptor} (${diameterLabel})`;
+                option.textContent = `${asteroid.name} (${asteroid.diameter.toFixed(0)} m)`;
                 asteroidSelect.appendChild(option);
             });
         }
         if (asteroidMeta) {
-            asteroidMeta.textContent = payload.summary ?? "Loaded NASA small-body catalog sample.";
+            asteroidMeta.textContent = payload.summary ?? "Loaded near-Earth object sample.";
         }
     } catch (error) {
         console.error(error);
@@ -1083,7 +732,7 @@ async function fetchAsteroids() {
         }
     } finally {
         refreshAsteroidsBtn.disabled = false;
-        refreshAsteroidsBtn.textContent = "Refresh NASA Hazard Catalog";
+        refreshAsteroidsBtn.textContent = "Fetch Near-Earth Objects";
     }
 }
 
@@ -1092,8 +741,6 @@ function applyAsteroidPreset(index) {
         if (asteroidMeta) {
             asteroidMeta.textContent = "Using manually configured parameters.";
         }
-                updateOrbitStatus(DEFAULT_ORBIT_STATUS);
-
         return;
     }
     const asteroid = latestAsteroids[Number(index)];
@@ -1111,27 +758,8 @@ function applyAsteroidPreset(index) {
         }
     }
     if (asteroidMeta) {
-  const hazardNote = asteroid.hazardProbability
-            ? `Impact probability ${Number(asteroid.hazardProbability).toExponential(2)}`
-            : null;
-        const palermoNote = Number.isFinite(asteroid.palermoScale) ? `Palermo ${asteroid.palermoScale.toFixed(2)}` : null;
-        const moidNote = Number.isFinite(asteroid.moidAu) ? `MOID=${asteroid.moidAu.toFixed(3)} au` : null;
-        const parts = [
-            `Loaded ${asteroid.name}`,
-            asteroid.designation ? `Designation ${asteroid.designation}` : null,
-            asteroid.absoluteMagnitude ? `H=${asteroid.absoluteMagnitude}` : null,
-            moidNote,
-            hazardNote,
-            palermoNote,
-            asteroid.source ? `Source: ${asteroid.source.toUpperCase()}` : null
-        ].filter(Boolean);
-        asteroidMeta.textContent = parts.join(" • ");
+        asteroidMeta.textContent = `Loaded ${asteroid.name}: ${asteroid.designation} | H=${asteroid.absoluteMagnitude}`;
     }
-    if (objectQueryInput && asteroid.orbitQuery) {
-        objectQueryInput.value = asteroid.orbitQuery;
-    }
-    if (asteroid.orbitQuery) {
-        loadOrbitByQuery(asteroid.orbitQuery, { label: asteroid.name, meta: asteroid });    }
     updateSizeComparison();
 }
 
@@ -1144,6 +772,7 @@ async function geocode(query) {
         const data = await response.json();
         if (data?.results?.length) {
             const first = data.results[0];
+            pendingAutoRun = true;
             map.setView([first.lat, first.lng], Math.max(map.getZoom() || 3, 7), { animate: true });
             placeImpactMarker(first.lat, first.lng, first.label);
             updateMapStatus(`Impact pin dropped at ${first.label}`);
@@ -1209,9 +838,6 @@ function formatCurrency(value) {
         currency: "USD",
         notation: "compact",
         maximumFractionDigits: 1
-         });
-    return formatter.format(value);
-}
 
 function formatHeight(value) {
     if (!isFinite(value) || value <= 0) {
@@ -1240,9 +866,9 @@ function formatDurationMinutes(minutes) {
     }
     return `${hours} h ${Math.round(remaining)} min`;
 }
-
-
-
+    });
+    return formatter.format(value);
+}
 function formatEnergy(value) {
     if (!isFinite(value) || value <= 0) {
         return "--";
@@ -1329,34 +955,11 @@ if (asteroidSelect) {
     });
 }
 
-if (terrainSelect) {
-    terrainSelect.addEventListener("change", () => {
-        applyGeologyToUI(latestGeology, { openPopup: false });
-    });
-}
-
 if (refreshAsteroidsBtn) {
     refreshAsteroidsBtn.addEventListener("click", () => {
         fetchAsteroids();
     });
 }
-
-if (objectSearchForm) {
-    objectSearchForm.addEventListener("submit", (event) => {
-        event.preventDefault();
-        const query = objectQueryInput?.value?.trim();
-        if (query) {
-            if (objectQueryInput) {
-                objectQueryInput.value = query;
-            }
-            loadOrbitByQuery(query, { label: query });
-        } else {
-            clearOrbitVisualization();
-            updateOrbitStatus(DEFAULT_ORBIT_STATUS);
-        }
-    });
-}
-
 
 if (locationForm) {
     locationForm.addEventListener("submit", (event) => {
@@ -1368,8 +971,6 @@ if (locationForm) {
 initMap();
 fetchAsteroids();
 updateSizeComparison();
-    resetResultDisplay();
-
 
 
 

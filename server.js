@@ -1,223 +1,71 @@
 import express from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
+<<<<<<< ours
+import fallbackAsteroids from "./data/asteroids-fallback.json" with { type: "json" };
+=======
+
+>>>>>>> theirs
 dotenv.config();
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NASA_API_KEY = process.env.NASA_API_KEY || "DEMO_KEY";
 const DEFAULT_USER_AGENT = "AsteroidImpactLab/1.0 (+https://example.com/contact)";
+
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static("public"));
-const COMET_DATASET_URL =
-    "https://data.nasa.gov/docs/legacy/Near-Earth_Comets_-_Orbital_Elements/Near-Earth_Comets_-_Orbital_Elements_rows.json";
-const AU_IN_KM = 149_597_870.7;
-const SOLAR_MU_KM3_S2 = 1.32712440018e11;
+
 const TERRAIN = {
     land: { label: "continental crust", density: 2600, dampening: 1 },
     water: { label: "open ocean", density: 1020, dampening: 0.78 },
     ice: { label: "polar ice", density: 930, dampening: 0.62 }
 };
+
 const CASUALTY_FATALITY_FACTORS = {
     fireball: 0.98,
     blast: 0.8,
     wind: 0.5,
     seismic: 0.15
 };
+
 const ECONOMIC_LOSS_PER_FATALITY = 4_200_000;
-const DEFAULT_ALBEDO = 0.14;
-function estimateDiameterFromH(absoluteMagnitude, albedo = DEFAULT_ALBEDO) {
-    const H = Number(absoluteMagnitude);
-    const p = Number.isFinite(albedo) && albedo > 0 ? albedo : DEFAULT_ALBEDO;
-    if (!Number.isFinite(H)) return null;
-    const diameterKm = (1329 / Math.sqrt(p)) * 10 ** (-0.2 * H);
-    return diameterKm * 1000;
-}
-function extractPhysicalParameters(sbdb) {
-    const physical = Array.isArray(sbdb?.phys_par) ? sbdb.phys_par : [];
-    const lookup = (name) => physical.find((entry) => (entry?.name || "").toLowerCase() === name.toLowerCase());
-    const absoluteMagnitude = Number(lookup("H")?.value ?? lookup("ABS_MAG")?.value);
-    const albedoEntry = lookup("ALBEDO") || lookup("PV");
-    const albedo = Number(albedoEntry?.value);
-    const diameterEntry = lookup("DIAMETER") || lookup("D") || lookup("DIAMETER_KM");
-    const diameterValue = Number(diameterEntry?.value);
-    const diameterMeters = Number.isFinite(diameterValue) ? diameterValue * 1000 : null;
-    return {
-        absoluteMagnitude,
-        albedo,
-        diameterMeters
-    };
-}
-function mapSbdbOrbit(sbdb) {
-    const elements = Array.isArray(sbdb?.orbit?.elements) ? sbdb.orbit.elements : [];
-    const valueOf = (...labels) => {
-        for (const label of labels) {
-            const entry = elements.find((item) => item?.label === label || item?.name === label);
-            if (entry?.value != null) {
-                const numeric = Number(entry.value);
-                if (Number.isFinite(numeric)) {
-                    return numeric;
-                }
-            }
-        }
-        return null;
-    };
-    return {
-        semiMajorAxisAu: valueOf("a"),
-        eccentricity: valueOf("e"),
-        perihelionDistanceAu: valueOf("q"),
-        aphelionDistanceAu: valueOf("ad", "Q"),
-        inclinationDeg: valueOf("i"),
-        ascendingNodeDeg: valueOf("om", "node"),
-        argPerihelionDeg: valueOf("w", "peri"),
-        meanAnomalyDeg: valueOf("ma", "M"),
-        meanMotionDegPerDay: valueOf("n"),
-        periodDays: valueOf("per"),
-        timeOfPerihelion: valueOf("tp"),
-        epochJulian: Number(sbdb?.orbit?.epoch)
-    };
-}
-function mapSocrataDataset(dataset) {
-    const columns = Array.isArray(dataset?.meta?.view?.columns) ? dataset.meta.view.columns : [];
-    const data = Array.isArray(dataset?.data) ? dataset.data : [];
-    const fieldIndex = new Map();
-    columns.forEach((column, index) => {
-        const fieldName = column?.fieldName;
-        if (fieldName && !fieldName.startsWith(":")) {
-            fieldIndex.set(fieldName, index);
-        }
-    });
-    return data.map((row) => {
-        const record = {};
-        fieldIndex.forEach((columnIndex, fieldName) => {
-            record[fieldName] = row?.[columnIndex] ?? null;
-        });
-        return record;
-    });
-}
-function wrapDegrees(degrees) {
-    if (!Number.isFinite(degrees)) return null;
-    let value = degrees % 360;
-    if (value < 0) value += 360;
-    return value;
-}
-function computePerihelionSpeed(perihelionAu, semiMajorAxisAu) {
-    const q = Number(perihelionAu);
-    const a = Number(semiMajorAxisAu);
-    if (!Number.isFinite(q) || !Number.isFinite(a) || q <= 0 || a <= 0) {
-        return null;
-    }
-    const radiusKm = q * AU_IN_KM;
-    const semiMajorKm = a * AU_IN_KM;
-    const term = 2 / radiusKm - 1 / semiMajorKm;
-    if (term <= 0) {
-        return null;
-    }
-    return Math.sqrt(SOLAR_MU_KM3_S2 * term);
-}
-function estimateCometDiameter(moidAu) {
-    const moid = Number(moidAu);
-    if (!Number.isFinite(moid)) {
-        return 1200;
-    }
-    if (moid <= 0.01) {
-        return 3200;
-    }
-    if (moid <= 0.03) {
-        return 2100;
-    }
-    return 1200;
-}
-function mapCometCatalog(dataset) {
-    const records = mapSocrataDataset(dataset);
-    return records
-        .map((row) => {
-            const name = row.object_name || row.object || "Comet";
-            const designation = row.object || row.object_name || name;
-            const eccentricity = Number(row.e);
-            const perihelionAu = Number(row.q_au_1);
-            const aphelionAu = Number(row.q_au_2);
-            const periodYears = Number(row.p_yr);
-            const periodDays = Number.isFinite(periodYears) ? periodYears * 365.25 : null;
-            let semiMajorAxisAu = null;
-            if (Number.isFinite(perihelionAu) && Number.isFinite(aphelionAu)) {
-                semiMajorAxisAu = (perihelionAu + aphelionAu) / 2;
-            } else if (Number.isFinite(perihelionAu) && Number.isFinite(eccentricity) && eccentricity < 1) {
-                semiMajorAxisAu = perihelionAu / (1 - eccentricity);
-            }
-            const derivedAphelionAu =
-                Number.isFinite(aphelionAu) || !Number.isFinite(semiMajorAxisAu) || !Number.isFinite(eccentricity)
-                    ? aphelionAu
-                    : semiMajorAxisAu * (1 + eccentricity);
-            const meanMotionDegPerDay =
-                Number.isFinite(periodDays) && periodDays > 0 ? 360 / periodDays : null;
-            const timeOfPerihelion = Number(row.tp_tdb);
-            const epochJulian = Number(row.epoch_tdb);
-            let meanAnomalyDeg = null;
-            if (
-                Number.isFinite(meanMotionDegPerDay) &&
-                Number.isFinite(epochJulian) &&
-                Number.isFinite(timeOfPerihelion)
-            ) {
-                const delta = epochJulian - timeOfPerihelion;
-                meanAnomalyDeg = wrapDegrees(meanMotionDegPerDay * delta);
-            }
-            const inclinationDeg = Number(row.i_deg);
-            const ascendingNodeDeg = Number(row.node_deg);
-            const argPerihelionDeg = Number(row.w_deg);
-            const moidAu = Number(row.moid_au);
-            const perihelionSpeed = computePerihelionSpeed(perihelionAu, semiMajorAxisAu);
-            return {
-                name,
-                designation,
-                diameter: clamp(estimateCometDiameter(moidAu), 300, 6000),
-                velocity: clamp(Number.isFinite(perihelionSpeed) ? perihelionSpeed : 35, 5, 75),
-                density: 500,
-                impactAngle: 45,
-                source: "comet",
-                hazardProbability: null,
-                palermoScale: null,
-                orbitQuery: designation,
-                absoluteMagnitude: null,
-                neo: true,
-                pha: Number.isFinite(moidAu) && moidAu <= 0.05,
-                moidAu,
-                precomputedOrbit: {
-                    semiMajorAxisAu,
-                    eccentricity,
-                    perihelionDistanceAu: perihelionAu,
-                    aphelionDistanceAu: derivedAphelionAu,
-                    inclinationDeg,
-                    ascendingNodeDeg,
-                    argPerihelionDeg,
-                    meanAnomalyDeg,
-                    meanMotionDegPerDay,
-                    periodDays,
-                    timeOfPerihelion,
-                    epochJulian
-                },
-                orbitClassCode: "NEC",
-                orbitClassName: "Near-Earth Comet"
-            };
-        })
-        .filter((entry) => Number.isFinite(entry.precomputedOrbit?.semiMajorAxisAu));
-}
 
 async function fetchJson(url, options = {}) {
-    const response = await fetch(url, {
-        headers: {
-            "User-Agent": DEFAULT_USER_AGENT,
-            Accept: "application/json",
-            ...(options.headers || {})
-        },
-        ...options
-    });
-    if (!response.ok) {
-        const message = await response.text();
-        throw new Error(`Request failed (${response.status}): ${message}`);
+    const { headers = {}, timeoutMs = 10_000, signal, ...rest } = options;
+    const controller = new AbortController();
+    const extraSignals = [];
+    if (signal) {
+        extraSignals.push(signal);
     }
-    return response.json();
+    const combinedSignal = extraSignals.length
+        ? AbortSignal.any([controller.signal, ...extraSignals])
+        : controller.signal;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, {
+            headers: {
+                "User-Agent": DEFAULT_USER_AGENT,
+                Accept: "application/json",
+                ...headers
+            },
+            signal: combinedSignal,
+            ...rest
+        });
+        if (!response.ok) {
+            const message = await response.text();
+            throw new Error(`Request failed (${response.status}): ${message}`);
+        }
+        return response.json();
+    } catch (error) {
+        if (error?.name === "AbortError") {
+            throw new Error(`Request timed out after ${timeoutMs} ms`);
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeout);
+    }
 }
-
 
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -378,13 +226,35 @@ async function resolveOceanContext(lat, lng) {
     return context;
 }
 
+function buildFallbackReverse(lat, lng, error) {
+    const latHemisphere = lat >= 0 ? "N" : "S";
+    const lngHemisphere = lng >= 0 ? "E" : "W";
+    const coordinateLabel = `${Math.abs(lat).toFixed(2)}°${latHemisphere}, ${Math.abs(lng).toFixed(2)}°${lngHemisphere}`;
+    return {
+        city: null,
+        locality: null,
+        principalSubdivision: null,
+        countryName: "Unknown location",
+        continent: null,
+        localityInfo: { natural: [], informative: [] },
+        timezone: null,
+        description: coordinateLabel,
+        fallback: true,
+        fallbackReason: error || "Geocoding service unavailable"
+    };
+}
+
 async function resolveGeology(lat, lng) {
     const reverseUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`;
-    let reverse = null;
+    let reverse = buildFallbackReverse(lat, lng);
     try {
-        reverse = await fetchJson(reverseUrl);
+        const result = await fetchJson(reverseUrl, { timeoutMs: 6000 });
+        if (result && typeof result === "object") {
+            reverse = { ...reverse, ...result, fallback: false };
+            delete reverse.fallbackReason;
+        }
     } catch (error) {
-        throw new Error("Reverse geocoding failed");
+        reverse = buildFallbackReverse(lat, lng, error.message);
     }
 
     let elevation = null;
@@ -415,7 +285,7 @@ async function resolveGeology(lat, lng) {
     }
 
     const labels = [reverse.city, reverse.locality, reverse.principalSubdivision, reverse.countryName].filter(Boolean);
-    const label = labels[0] || "Selected location";
+    const label = labels[0] || reverse.description || "Selected location";
     const natural = reverse?.localityInfo?.natural ?? [];
     const informative = reverse?.localityInfo?.informative ?? [];
     const highlights = informative.slice(0, 3).map((item) => item?.description || item?.name).filter(Boolean);
@@ -430,20 +300,30 @@ async function resolveGeology(lat, lng) {
         ocean = null;
     }
 
-    return {
+    const geology = {
         label,
-        country: reverse.countryName,
-        region: reverse.principalSubdivision,
-        continent: reverse.continent,
+        country: reverse.countryName || "Unknown location",
+        region: reverse.principalSubdivision || null,
+        continent: reverse.continent || null,
         elevationMeters: elevation,
         surfaceType: inferSurfaceType({ reverse, elevation, landcover: landcoverLabel, lat }),
         landcover: landcoverLabel,
         naturalFeature: natural[0]?.name || null,
         waterBody: reverse.isOcean ? reverse.ocean || "Open ocean" : reverse.isLake ? reverse.lake || "Lake" : null,
-        timezone: reverse.timezone,
+        timezone: reverse.timezone || null,
         highlights: highlights.filter(Boolean),
         ocean
     };
+<<<<<<< ours
+
+    if (reverse.fallback) {
+        geology.fallback = {
+            reason: reverse.fallbackReason,
+            description: reverse.description
+        };
+    }
+
+    return geology;
 
     async function resolveEarthquakeAnalog(magnitude) {
     const target = Number(magnitude);
@@ -480,6 +360,8 @@ async function resolveGeology(lat, lng) {
     }
 }
 
+=======
+>>>>>>> theirs
 }
 
 function computeImpact({ diameter, velocity, angleDeg, density, terrainKey }) {
@@ -773,7 +655,11 @@ function buildSummary(parameters, impact, location, populationInfo, tsunami) {
         ? ` Tsunami modelling projects coastal wave heights near ${Math.max(tsunami.coastalWaveHeight / 1000, 0).toFixed(1)} m with inundation reaching about ${tsunami.inundationDistanceKm.toFixed(1)} km inland.`
         : "";
 
-    return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleDeg.toFixed(0)}� and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
+<<<<<<< ours
+    return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleDeg.toFixed(0)}° and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
+=======
+    return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleDeg.toFixed(0)} and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
+>>>>>>> theirs
 }
 
 app.get("/api/geocode", async (req, res) => {
@@ -827,7 +713,7 @@ app.get("/api/geology", async (req, res) => {
 app.get("/api/asteroids", async (_req, res) => {
     try {
         const url = `https://api.nasa.gov/neo/rest/v1/neo/browse?size=12&api_key=${NASA_API_KEY}`;
-        const catalog = await fetchJson(url);
+        const catalog = await fetchJson(url, { timeoutMs: 8000 });
         const asteroids = (catalog?.near_earth_objects ?? []).map((neo) => {
             const diameterData = neo?.estimated_diameter?.meters;
             const diameter = diameterData
@@ -843,19 +729,27 @@ app.get("/api/asteroids", async (_req, res) => {
                 velocity: clamp(velocity, 5, 75),
                 density,
                 impactAngle: 45,
-                absoluteMagnitude: neo.absolute_magnitude_h
+                absoluteMagnitude: neo.absolute_magnitude_h,
+                source: neo.is_sentry_object ? "sentry" : "neo"
             };
         });
         res.json({
             asteroids,
-            summary: `Fetched ${asteroids.length} objects from NASA's catalog (NEO browse).`
+            summary: `Fetched ${asteroids.length} near-Earth objects from NASA's NEO catalog.`
         });
     } catch (error) {
-        res.status(500).json({ error: "Failed to load asteroid catalog", details: error.message });
+        const asteroids = fallbackAsteroids.map((neo) => ({
+            ...neo,
+            diameter: clamp(Number(neo.diameter) || 150, 5, 100000),
+            velocity: clamp(Number(neo.velocity) || 22, 5, 75),
+            density: clamp(Number(neo.density) || 3200, 500, 11000)
+        }));
+        res.json({
+            asteroids,
+            summary: `Using offline asteroid presets (${asteroids.length} objects). NASA catalog unavailable: ${error.message}`
+        });
     }
 });
-
-
 
 app.post("/api/simulate", async (req, res) => {
     const { location, diameter, velocity, angle, density, terrain, populationOverride } = req.body ?? {};
