@@ -27,16 +27,49 @@ const CASUALTY_FATALITY_FACTORS = {
 
 const ECONOMIC_LOSS_PER_FATALITY = 4_200_000;
 
+function combineAbortSignals(signals) {
+    const validSignals = signals.filter(Boolean);
+    if (validSignals.length === 0) {
+        return undefined;
+    }
+    if (validSignals.length === 1) {
+        return validSignals[0];
+    }
+    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.any === "function") {
+        return AbortSignal.any(validSignals);
+    }
+
+    const relay = new AbortController();
+    const subscriptions = [];
+    const cleanup = () => {
+        for (const { signal, handler } of subscriptions) {
+            signal.removeEventListener("abort", handler);
+        }
+        subscriptions.length = 0;
+    };
+
+    for (const signal of validSignals) {
+        if (signal.aborted) {
+            relay.abort(signal.reason);
+            cleanup();
+            return relay.signal;
+        }
+        const handler = () => {
+            relay.abort(signal.reason);
+            cleanup();
+        };
+        signal.addEventListener("abort", handler, { once: true });
+        subscriptions.push({ signal, handler });
+    }
+
+    relay.signal.addEventListener("abort", cleanup, { once: true });
+    return relay.signal;
+}
+
 async function fetchJson(url, options = {}) {
     const { headers = {}, timeoutMs = 10_000, signal, ...rest } = options;
     const controller = new AbortController();
-    const extraSignals = [];
-    if (signal) {
-        extraSignals.push(signal);
-    }
-    const combinedSignal = extraSignals.length
-        ? AbortSignal.any([controller.signal, ...extraSignals])
-        : controller.signal;
+    const combinedSignal = combineAbortSignals([controller.signal, signal]);
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
         const response = await fetch(url, {
