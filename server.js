@@ -30,6 +30,49 @@ const CASUALTY_FATALITY_FACTORS = {
 
 const ECONOMIC_LOSS_PER_FATALITY = 4_200_000;
 
+function isNetworkOfflineError(error) {
+    if (!error) return false;
+    const candidates = [error, error.cause].filter(Boolean);
+    for (const candidate of candidates) {
+        if (candidate.code === "ENETUNREACH" || candidate.code === "EAI_AGAIN" || candidate.code === "EHOSTUNREACH") {
+            return true;
+        }
+        const message = typeof candidate.message === "string" ? candidate.message : "";
+        if (/ENETUNREACH|EAI_AGAIN|EHOSTUNREACH|getaddrinfo ENOTFOUND/.test(message)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function describeNasaFailure(error, { startDate, endDate } = {}) {
+    const baseRange = startDate
+        ? endDate && endDate !== startDate
+            ? `${startDate} to ${endDate}`
+            : startDate
+        : null;
+    const rangeLabel = baseRange ? ` for ${baseRange}` : "";
+
+    if (isNetworkOfflineError(error)) {
+        return `Mission Control cannot reach NASA's NeoWs service${rangeLabel}. Network access is unavailable from this environment.`;
+    }
+
+    const message = typeof error?.message === "string" && error.message.trim() ? error.message.trim() : null;
+    if (!message) {
+        return `Mission Control encountered an unknown issue contacting NASA's NeoWs service${rangeLabel}.`;
+    }
+
+    if (/Request failed \(403\)/.test(message)) {
+        return `NASA's NeoWs service rejected the request${rangeLabel} (HTTP 403). Check the configured API key.`;
+    }
+
+    if (/Request failed \(4\d{2}\)/.test(message)) {
+        return `NASA's NeoWs service returned an error${rangeLabel}: ${message}.`;
+    }
+
+    return `NASA's NeoWs request${rangeLabel} failed: ${message}.`;
+}
+
 function combineAbortSignals(signals) {
     const validSignals = signals.filter(Boolean);
     if (validSignals.length === 0) {
@@ -1158,10 +1201,17 @@ app.get("/api/neo-feed", async (req, res) => {
             asteroids: records
         });
     } catch (error) {
+        const warning = describeNasaFailure(error, { startDate: startString, endDate: endString ?? startString });
         console.error(`NASA NeoWs feed request failed for ${startString} to ${endString ?? startString}:`, error);
-        res.status(502).json({
-            error: "Failed to load NASA Near-Earth Object feed.",
-            details: error.message
+        const fallback = FALLBACK_ASTEROID_RECORDS.map((record) => mapRecordToFeedEntry(record, startString));
+        res.json({
+            source: "fallback",
+            startDate: startString,
+            endDate: endString ?? startString,
+            count: fallback.length,
+            asteroids: fallback,
+            warning,
+            error: error?.message ?? null
         });
     }
 });

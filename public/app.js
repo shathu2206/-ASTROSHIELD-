@@ -366,10 +366,26 @@ async function handleNeoLoadClick() {
         const asteroids = Array.isArray(payload?.asteroids) ? payload.asteroids : [];
         renderNeoTable(asteroids);
 
+        const endLabel = endValue || startValue;
+        if (payload?.source === "fallback") {
+            const warning = payload?.warning ||
+                `NASA feed unavailable for ${startValue}${endLabel && endLabel !== startValue ? ` → ${endLabel}` : ""}.`;
+            if (asteroids.length === 0) {
+                setNeoStatus(`${warning} No offline asteroids available.`, "warning");
+            } else {
+                setNeoStatus(
+                    `${warning} Displaying ${asteroids.length.toLocaleString()} mission archive object${
+                        asteroids.length === 1 ? "" : "s"
+                    }.`,
+                    "warning"
+                );
+            }
+            return;
+        }
+
         if (asteroids.length === 0) {
             setNeoStatus("No near-Earth objects reported for that range.", "info");
         } else {
-            const endLabel = endValue || startValue;
             setNeoStatus(
                 `Loaded ${asteroids.length.toLocaleString()} object${asteroids.length === 1 ? "" : "s"} from NASA (${startValue} → ${endLabel}).`,
                 "success"
