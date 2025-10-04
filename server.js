@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
+import { execFile } from "node:child_process";
 import fallbackAsteroids from "./data/asteroids-fallback.json" with { type: "json" };
 
 dotenv.config();
@@ -68,18 +69,111 @@ function combineAbortSignals(signals) {
     return relay.signal;
 }
 
+function shouldFallbackToCurl(error) {
+    if (!error) return false;
+    if (error.code === "ENETUNREACH") {
+        return true;
+    }
+    const message = typeof error.message === "string" ? error.message : "";
+    return message.includes("ENETUNREACH");
+}
+
+async function fetchJsonWithCurl(url, { headers, timeoutMs, signal }) {
+    if (signal?.aborted) {
+        throw new Error("Request aborted");
+    }
+
+    const args = ["-sS", "--location", "--fail-with-body"];
+    const timeoutSeconds = Math.max(Math.ceil(timeoutMs / 1000), 1);
+    args.push("--max-time", String(timeoutSeconds));
+
+    for (const [name, value] of Object.entries(headers ?? {})) {
+        if (value != null) {
+            args.push("-H", `${name}: ${value}`);
+        }
+    }
+
+    args.push(url);
+
+    const executeCurl = () =>
+        new Promise((resolve, reject) => {
+            let child;
+
+            const cleanup = () => {
+                if (signal) {
+                    signal.removeEventListener("abort", onAbort);
+                }
+            };
+
+            const onAbort = () => {
+                cleanup();
+                if (child) {
+                    child.kill("SIGTERM");
+                }
+                reject(new Error("Request aborted"));
+            };
+
+            child = execFile(
+                "curl",
+                args,
+                { encoding: "utf8", maxBuffer: 10 * 1024 * 1024 },
+                (error, stdout) => {
+                    cleanup();
+                    if (error) {
+                        error.stdout = stdout;
+                        reject(error);
+                        return;
+                    }
+                    resolve(stdout);
+                }
+            );
+
+            if (signal) {
+                if (signal.aborted) {
+                    onAbort();
+                } else {
+                    signal.addEventListener("abort", onAbort, { once: true });
+                }
+            }
+        });
+
+    try {
+        const stdout = await executeCurl();
+        const trimmed = stdout.trim();
+        if (!trimmed) {
+            return {};
+        }
+        return JSON.parse(trimmed);
+    } catch (error) {
+        if (error?.message === "Request aborted") {
+            throw error;
+        }
+
+        if (error?.stdout) {
+            const message = String(error.stdout).trim();
+            if (message) {
+                throw new Error(`curl request failed: ${message}`);
+            }
+        }
+
+        const detail = error?.message ? ` ${error.message}` : "";
+        throw new Error(`curl request failed.${detail}`.trim());
+    }
+}
+
 async function fetchJson(url, options = {}) {
     const { headers = {}, timeoutMs = 10_000, signal, ...rest } = options;
     const controller = new AbortController();
     const combinedSignal = combineAbortSignals([controller.signal, signal]);
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const requestHeaders = {
+        "User-Agent": DEFAULT_USER_AGENT,
+        Accept: "application/json",
+        ...headers
+    };
     try {
         const response = await fetch(url, {
-            headers: {
-                "User-Agent": DEFAULT_USER_AGENT,
-                Accept: "application/json",
-                ...headers
-            },
+            headers: requestHeaders,
             signal: combinedSignal,
             ...rest
         });
@@ -91,6 +185,15 @@ async function fetchJson(url, options = {}) {
     } catch (error) {
         if (error?.name === "AbortError") {
             throw new Error(`Request timed out after ${timeoutMs} ms`);
+        }
+        if (shouldFallbackToCurl(error)) {
+            try {
+                console.warn(`Fetch failed with ENETUNREACH, retrying via curl: ${url}`);
+                return await fetchJsonWithCurl(url, { headers: requestHeaders, timeoutMs, signal: combinedSignal });
+            } catch (fallbackError) {
+                fallbackError.cause = fallbackError.cause ?? error;
+                throw fallbackError;
+            }
         }
         throw error;
     } finally {
