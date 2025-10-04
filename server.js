@@ -1,7 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
-
+import fallbackAsteroids from "./data/asteroids-fallback.json" with { type: "json" };
 dotenv.config();
 
 const app = express();
@@ -269,6 +269,14 @@ async function resolveGeology(lat, lng) {
         highlights: highlights.filter(Boolean),
         ocean
     };
+    if (reverse.fallback) {
+        geology.fallback = {
+            reason: reverse.fallbackReason,
+            description: reverse.description
+        };
+    }
+
+    return geology;
 }
 
 function computeImpact({ diameter, velocity, angleDeg, density, terrainKey }) {
@@ -562,7 +570,7 @@ function buildSummary(parameters, impact, location, populationInfo, tsunami) {
         ? ` Tsunami modelling projects coastal wave heights near ${Math.max(tsunami.coastalWaveHeight / 1000, 0).toFixed(1)} m with inundation reaching about ${tsunami.inundationDistanceKm.toFixed(1)} km inland.`
         : "";
 
-    return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleDeg.toFixed(0)}� and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
+    return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleDeg.toFixed(0)}° and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
 }
 
 app.get("/api/geocode", async (req, res) => {
