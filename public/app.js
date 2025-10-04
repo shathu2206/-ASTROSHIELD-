@@ -687,6 +687,53 @@ async function loadGeology() {
     }
 }
 
+function shouldShowMarineContext(geology) {
+<<<<<<< ours
+    if (!geology?.ocean) {
+        return false;
+    }
+    const depth = Number(geology.ocean.depthMeters);
+    const hasDepth = Number.isFinite(depth);
+    const depthSuggestsLand = hasDepth && depth < 0;
+    const selectedTerrain = terrainSelect?.value;
+    if (selectedTerrain === "water") {
+        return !depthSuggestsLand || !hasDepth;
+    }
+    if (!selectedTerrain) {
+        return !depthSuggestsLand;
+    }
+    return false;
+=======
+    if (!geology) {
+        return false;
+    }
+
+    const selectedTerrain = terrainSelect?.value;
+    if (selectedTerrain === "water") {
+        return true;
+    }
+
+    const waterBody = geology.waterBody;
+    const marineWaterBody = typeof waterBody === "string" && /\b(ocean|sea)\b/i.test(waterBody);
+    if (marineWaterBody) {
+        return true;
+    }
+
+    const ocean = geology.ocean;
+    if (!ocean) {
+        return false;
+    }
+
+    const elevation = Number(ocean.elevationMeters);
+    if (Number.isFinite(elevation)) {
+        return elevation <= 0;
+    }
+
+    const depth = Number(ocean.depthMeters);
+    return Number.isFinite(depth) && depth >= 0;
+>>>>>>> theirs
+}
+
 function buildGeologyPopup(geology) {
     if (!geology) {
         return "<strong>Location selected</strong><br>No surface data available.";
@@ -701,24 +748,34 @@ function buildGeologyPopup(geology) {
             parts.push(locationLine);
         }
     }
-    if (Number.isFinite(geology.elevationMeters)) {
-        parts.push(`Elevation: ${Math.round(geology.elevationMeters)} m`);
-    }
-    if (geology.surfaceType) {
-        parts.push(`Surface: ${escapeHtml(geology.surfaceType)}`);
-    }
-    if (geology.landcover) {
-        parts.push(`Land cover: ${escapeHtml(geology.landcover)}`);
-    }
-    if (geology.naturalFeature) {
-        parts.push(`Nearby feature: ${escapeHtml(geology.naturalFeature)}`);
-    }
-    if (geology.waterBody) {
-        parts.push(`Water body: ${escapeHtml(geology.waterBody)}`);
+    if (!marineContext) {
+        if (Number.isFinite(geology.elevationMeters)) {
+            parts.push(`Elevation: ${Math.round(geology.elevationMeters)} m`);
+        }
+        if (geology.surfaceType) {
+            parts.push(`Surface: ${escapeHtml(geology.surfaceType)}`);
+        }
+        if (geology.landcover) {
+            parts.push(`Land cover: ${escapeHtml(geology.landcover)}`);
+        }
+        if (geology.naturalFeature) {
+            parts.push(`Nearby feature: ${escapeHtml(geology.naturalFeature)}`);
+        }
     }
     const ocean = geology.ocean;
-    if (ocean) {
+<<<<<<< ours
+    if (marineContext && ocean) {
+        if (geology.waterBody) {
+            parts.push(`Water body: ${escapeHtml(geology.waterBody)}`);
+        }
         if (Number.isFinite(ocean.depthMeters)) {
+=======
+    if (marineContext) {
+        if (geology.waterBody) {
+            parts.push(`Water body: ${escapeHtml(geology.waterBody)}`);
+        }
+        if (ocean && Number.isFinite(ocean.depthMeters)) {
+>>>>>>> theirs
             const depthLabel = ocean.depthMeters > 0
                 ? `${Math.round(ocean.depthMeters)} m below mean sea level`
                 : `${Math.abs(Math.round(ocean.depthMeters))} m above mean sea level`;
