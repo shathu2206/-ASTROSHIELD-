@@ -23,8 +23,7 @@ body {
     overflow: hidden;
 }
 
-.layout {
-    display: gr.muted {
+.muted {
     color: var(--muted);
 }
 
@@ -184,21 +183,15 @@ body {
     box-shadow: 0 20px 40px rgba(5, 6, 12, 0.5);
     color: var(--text);
     padding: 0.7rem 0.85rem;
-    max-width: 240px;
-    pointer-events: auto;
-    backdrop-filter: blur(14px);
-}
-
-.leaflet-tooltip.footprint-tooltip .footprint-tooltip__inner {
-    display:     width: min(320px, calc(100vw - 48px));
+    width: min(320px, calc(100vw - 48px));
     max-width: min(320px, calc(100vw - 48px));
     pointer-events: auto;
     backdrop-filter: blur(14px);
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
-.    white-space: normal;
-    overflow-wrap: anywhere;
-leaflet-tooltip.footprint-tooltip .footprint-tooltip__inner {
+.leaflet-tooltip.footprint-tooltip .footprint-tooltip__inner {
     display: grid;
     gap: 0.45rem;
 }
@@ -279,7 +272,18 @@ leaflet-tooltip.footprint-tooltip .footprint-tooltip__inner {
     .leaflet-tooltip.footprint-tooltip .stat-value {
         text-align: left;
     }
-6, 22, 39, 0.58));
+}
+
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    overflow-y: auto;
+    padding-right: 0.4rem;
+}
+
+.sidebar-header {
+    background: linear-gradient(135deg, rgba(16, 22, 39, 0.92), rgba(16, 22, 39, 0.58));
     padding: 1.6rem;
     border-radius: 22px;
     box-shadow: 0 26px 70px rgba(5, 6, 12, 0.4);
@@ -312,17 +316,7 @@ leaflet-tooltip.footprint-tooltip .footprint-tooltip__inner {
     font-size: 1.26rem;
 }
 
-.primary {
-    padding: 0.85rem;
-    border-radius: 12px;
-    border: none;
-    font-weight: 600;
-    font-size: 1rem;
-    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-    color: #1b1610;
-    cursor: pointer;
-.asteroid-search {
-    di#neo-feed .neo-controls {
+#neo-feed .neo-controls {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 0.9rem;
@@ -424,9 +418,6 @@ leaflet-tooltip.footprint-tooltip .footprint-tooltip__inner {
     color: #b5f7cf;
 }
 
-<<<<<<< ours
-splay: grid;
-=======
 .primary {
     padding: 0.85rem;
     border-radius: 12px;
@@ -436,9 +427,9 @@ splay: grid;
     background: linear-gradient(135deg, var(--accent), var(--accent-strong));
     color: #1b1610;
     cursor: pointer;
+}
 .asteroid-search {
     display: grid;
->>>>>>> theirs
     gap: 0.9rem;
 }
 
@@ -619,7 +610,37 @@ splay: grid;
 
 .asteroid-search-actions {
     justify-content: space-between;
-spacing: 0.06em;
+}
+
+.config-form {
+    display: grid;
+    gap: 1.1rem;
+}
+
+.config-form .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.1rem;
+}
+
+.field {
+    display: grid;
+    gap: 0.35rem;
+    font-size: 0.96rem;
+}
+
+.input {
+    position: relative;
+}
+
+.unit {
+    position: absolute;
+    inset: 0.3rem 0.55rem 0.3rem auto;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 0.55rem;
+    font-size: 0.74rem;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     background: rgba(255, 255, 255, 0.08);
     border-radius: 8px;
@@ -647,6 +668,46 @@ spacing: 0.06em;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--muted);
+}
+
+.results-dropdown {
+    display: block;
+    padding: 0.3rem 0.65rem;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.results-dropdown summary {
+    cursor: pointer;
+    margin: 0;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    list-style: none;
+}
+
+.results-dropdown summary::-webkit-details-marker {
+    display: none;
+}
+
+.results-dropdown summary::after {
+    content: '\25BC';
+    margin-left: auto;
+    font-size: 0.85rem;
+    transition: transform 0.2s ease;
+}
+
+.results-dropdown[open] summary::after {
+    transform: rotate(180deg);
+}
+
+.results-dropdown > ul {
+    margin-top: 0.6rem;
 }
 
 .results-grid {
@@ -703,44 +764,4 @@ strong {
 
 /* Orbit page specific tweaks */
 .orbit-canvas-wrap canvas { width:100% !important; height:100% !important; display:block; }
-
-.results-dropdown {
-    display: block;
-    padding: 0.3rem 0.65rem;
-    background: rgba(255, 255, 255, 0.04);
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.results-dropdown summary {
-    cursor: pointer;
-    margin: 0;
-    font-size: 1rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    list-style: none;
-}
-
-.results-dropdown summary::-webkit-details-marker {
-    display: none;
-}
-
-.results-dropdown summary::after {
-    content: '\25BC';
-    margin-left: auto;
-    font-size: 0.85rem;
-    transition: transform 0.2s ease;
-}
-
-.results-dropdown[open] summary::after {
-    transform: rotate(180deg);
-}
-
-.results-dropdown > ul {
-    margin-top: 0.6rem;
-}
 
