@@ -172,6 +172,83 @@ function stripTimeZoneLabel(text) {
     return text.replace(/\s*\|\s*time zone.*$/i, "").trim();
 }
 
+function getTimezoneOffsetMinutes(timeZone, date = new Date()) {
+    try {
+        const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
+        const zonedDate = new Date(date.toLocaleString("en-US", { timeZone }));
+        return Math.round((zonedDate.getTime() - utcDate.getTime()) / 60000);
+    } catch (error) {
+        return null;
+    }
+}
+
+function formatTimezoneLabel(timeZone) {
+    if (typeof timeZone !== "string" || !timeZone.trim()) {
+        return null;
+    }
+
+    const normalized = timeZone.trim();
+    try {
+        const now = new Date();
+        const parts = new Intl.DateTimeFormat("en-US", {
+            timeZone: normalized,
+            timeZoneName: "long"
+        }).formatToParts(now);
+        const descriptiveName = parts.find((part) => part.type === "timeZoneName")?.value || null;
+
+        const offsetMinutes = getTimezoneOffsetMinutes(normalized, now);
+        const offsetLabel = Number.isFinite(offsetMinutes)
+            ? (() => {
+                  const sign = offsetMinutes >= 0 ? "+" : "-";
+                  const absolute = Math.abs(offsetMinutes);
+                  const hours = String(Math.floor(absolute / 60)).padStart(2, "0");
+                  const minutes = String(absolute % 60).padStart(2, "0");
+                  return `UTC${sign}${hours}:${minutes}`;
+              })()
+            : null;
+
+        const segments = [normalized];
+        if (descriptiveName && descriptiveName.toLowerCase() !== normalized.toLowerCase()) {
+            segments.push(descriptiveName);
+        }
+        if (offsetLabel) {
+            segments.push(offsetLabel);
+        }
+
+        const uniqueSegments = segments.filter(Boolean).filter((value, index, array) => array.indexOf(value) === index);
+        if (uniqueSegments.length > 1) {
+            const [primary, ...rest] = uniqueSegments;
+            return `${primary} (${rest.join(", ")})`;
+        }
+        return uniqueSegments[0] || normalized;
+    } catch (error) {
+        return normalized;
+    }
+}
+
+function formatLandHighlights(highlights, timeZone) {
+    if (!Array.isArray(highlights)) {
+        return [];
+    }
+
+    return highlights
+        .map((item) => {
+            if (typeof item !== "string") {
+                return null;
+            }
+            const trimmed = item.trim();
+            if (!trimmed) {
+                return null;
+            }
+            if (/^time\s*zone\b/i.test(trimmed)) {
+                const label = formatTimezoneLabel(timeZone);
+                return label ? `Time zone: ${label}` : null;
+            }
+            return trimmed;
+        })
+        .filter((item) => typeof item === "string" && item.length > 0);
+}
+
 function formatCoordinate(lat, lng) {
     const degreeSymbol = "\u00B0";
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -439,15 +516,18 @@ function buildGeologyPopup(geology) {
             parts.push(`Nearby feature: ${escapeHtml(geology.naturalFeature)}`);
         }
         const landDetails = [];
-        if (Array.isArray(geology.highlights) && geology.highlights.length) {
-            const highlights = geology.highlights.slice(0, 3).map(escapeHtml).join(", ");
+        const formattedHighlights = formatLandHighlights(geology.highlights, geology.timezone);
+        if (formattedHighlights.length) {
+            const highlights = formattedHighlights.slice(0, 3).map(escapeHtml).join(", ");
             landDetails.push(`Highlights: ${highlights}`);
         }
         if (geology.continent) {
             landDetails.push(`Continent: ${escapeHtml(geology.continent)}`);
         }
-        if (geology.timezone) {
-            landDetails.push(`Time zone: ${escapeHtml(geology.timezone)}`);
+        const timezoneLabel = formatTimezoneLabel(geology.timezone);
+        const highlightIncludesTimezone = formattedHighlights?.some((item) => /^Time zone:/i.test(item));
+        if (timezoneLabel && !highlightIncludesTimezone) {
+            landDetails.push(`Time zone: ${escapeHtml(timezoneLabel)}`);
         }
         if (landDetails.length) {
             parts.push(...landDetails);
