@@ -443,55 +443,215 @@ async function loadGeology() {
     }
 }
 
-function shouldShowMarineContext(geology) {
+function normalizeDescriptor(value) {
+    return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function classifySurfaceContext(geology) {
     if (!geology) {
-        return false;
+        return { kind: "unknown", marineScore: 0, landScore: 0 };
     }
 
-    const ocean = geology.ocean;
-    const depth = toFiniteNumber(ocean?.depthMeters);
-    const hasDepth = depth !== null;
-    const depthSuggestsLand = hasDepth && depth < 0;
-    const selectedTerrain = terrainSelect?.value;
+    const ocean = geology.ocean || {};
+    const depth = toFiniteNumber(ocean.depthMeters);
+    const elevationAtSurface = toFiniteNumber(geology.elevationMeters);
+    const oceanElevation = toFiniteNumber(ocean.elevationMeters);
 
-    if (selectedTerrain === "water") {
-        // Assume marine context unless depth data indicates the location is above sea level.
-        if (depthSuggestsLand) {
-            return false;
+    let marineScore = 0;
+    let landScore = 0;
+
+    if (depth !== null) {
+        if (depth > 5) {
+            marineScore += 3;
+        } else if (depth > 0) {
+            marineScore += 2;
+        } else if (depth === 0) {
+            landScore += 1;
+        } else {
+            landScore += 2;
         }
-        return true;
     }
 
-    if (!selectedTerrain && depthSuggestsLand) {
-        return false;
+    if (oceanElevation !== null) {
+        if (oceanElevation > 1) {
+            landScore += 2;
+        } else if (oceanElevation < -1) {
+            marineScore += 1;
+        }
     }
 
-    const waterBody = geology.waterBody;
-    if (typeof waterBody === "string" && /\b(ocean|sea)\b/i.test(waterBody)) {
-        return true;
+    if (Number.isFinite(ocean.waveHeightMeters) && ocean.waveHeightMeters > 0.05) {
+        marineScore += 1;
+    }
+    if (Number.isFinite(ocean.surfaceTemperatureC)) {
+        marineScore += 1;
+    }
+    if (Number.isFinite(ocean.wavePeriodSeconds)) {
+        marineScore += 1;
     }
 
+    const surfaceType = normalizeDescriptor(geology.surfaceType);
+    if (surfaceType) {
+        if (/water|ocean|sea/.test(surfaceType)) {
+            marineScore += 1;
+        } else {
+            landScore += 1;
+        }
+    }
+
+    const landcover = normalizeDescriptor(geology.landcover);
+    if (landcover) {
+        if (/water|wetland|marsh|swamp|bog/.test(landcover)) {
+            marineScore += 1;
+        } else {
+            landScore += 1;
+        }
+    }
+
+    const naturalFeature = normalizeDescriptor(geology.naturalFeature);
+    if (naturalFeature) {
+        if (/sea|ocean|bay|gulf|strait|channel|sound/.test(naturalFeature)) {
+            marineScore += 1;
+        } else {
+            landScore += 1;
+        }
+    }
+
+    if (Array.isArray(geology.highlights) && geology.highlights.length) {
+        landScore += 1;
+    }
+
+    if (geology.continent) {
+        landScore += 2;
+    }
+
+    if (elevationAtSurface !== null) {
+        if (elevationAtSurface >= 2) {
+            landScore += 2;
+        } else if (elevationAtSurface < -2) {
+            marineScore += 1;
+        }
+    }
+
+    const waterBodyName = normalizeDescriptor(geology.waterBody);
+    if (waterBodyName) {
+        if (/\b(ocean|sea|gulf|bay|strait|channel|sound|basin|trench|deep)\b/.test(waterBodyName)) {
+            marineScore += 2;
+        } else if (/\b(lake|river|reservoir|pond|lagoon|marsh|swamp|creek|harbor|harbour)\b/.test(waterBodyName)) {
+            landScore += 1;
+        }
+    }
+
+    const selectedTerrain = terrainSelect?.value;
+    if (selectedTerrain === "water" && marineScore > 0) {
+        marineScore += 1;
+    } else if (selectedTerrain && selectedTerrain !== "water") {
+        landScore += 1;
+    }
+
+    let kind = "unknown";
+    if (marineScore >= landScore + 2) {
+        kind = "ocean";
+    } else if (landScore >= marineScore + 1) {
+        kind = "land";
+    } else if (marineScore > landScore && marineScore > 0) {
+        kind = "ocean";
+    } else if (landScore > 0) {
+        kind = "land";
+    }
+
+    return { kind, marineScore, landScore };
+}
+
+function buildLandDetails(geology) {
+    if (!geology) {
+        return [];
+    }
+
+    const details = [];
+    if (Number.isFinite(geology.elevationMeters)) {
+        details.push(`Elevation: ${Math.round(geology.elevationMeters)} m`);
+    }
+    if (geology.surfaceType) {
+        details.push(`Surface: ${escapeHtml(geology.surfaceType)}`);
+    }
+    if (geology.landcover) {
+        details.push(`Land cover: ${escapeHtml(geology.landcover)}`);
+    }
+    if (geology.naturalFeature) {
+        details.push(`Nearby feature: ${escapeHtml(geology.naturalFeature)}`);
+    }
+
+    const landDetails = [];
+    const formattedHighlights = formatLandHighlights(geology.highlights, geology.timezone);
+    if (formattedHighlights.length) {
+        const highlights = formattedHighlights.slice(0, 3).map(escapeHtml).join(", ");
+        landDetails.push(`Highlights: ${highlights}`);
+    }
+    if (geology.continent) {
+        landDetails.push(`Continent: ${escapeHtml(geology.continent)}`);
+    }
+    const timezoneLabel = formatTimezoneLabel(geology.timezone);
+    const highlightIncludesTimezone = formattedHighlights?.some((item) => /^Time zone:/i.test(item));
+    if (timezoneLabel && !highlightIncludesTimezone) {
+        landDetails.push(`Time zone: ${escapeHtml(timezoneLabel)}`);
+    }
+    if (landDetails.length) {
+        details.push(...landDetails);
+    }
+
+    return details;
+}
+
+function buildOceanDetails(ocean, geology) {
     if (!ocean) {
-        return false;
+        return [];
     }
 
-    const elevation = toFiniteNumber(ocean?.elevationMeters);
+    const details = [];
+    if (geology?.waterBody) {
+        details.push(`Water body: ${escapeHtml(geology.waterBody)}`);
+    }
+    const oceanDepth = toFiniteNumber(ocean.depthMeters);
+    if (oceanDepth !== null) {
+        const depthLabel = oceanDepth > 0
+            ? `${Math.round(oceanDepth)} m below mean sea level`
+            : `${Math.abs(Math.round(oceanDepth))} m above mean sea level`;
+        details.push(`Depth: ${escapeHtml(depthLabel)}`);
+    }
+    if (Number.isFinite(ocean.waveHeightMeters)) {
+        details.push(`Significant wave height: ${ocean.waveHeightMeters.toFixed(1)} m`);
+    }
+    if (Number.isFinite(ocean.surfaceTemperatureC)) {
+        details.push(`Sea surface temperature: ${ocean.surfaceTemperatureC.toFixed(1)} °C`);
+    }
+    if (Number.isFinite(ocean.wavePeriodSeconds)) {
+        details.push(`Wave period: ${ocean.wavePeriodSeconds.toFixed(0)} s`);
+    }
+
+    return details;
+}
+
+function buildLandEnvironmentSegments(geology) {
+    const segments = [];
+    if (geology?.surfaceType) {
+        segments.push(geology.surfaceType);
+    }
+    if (geology?.landcover) {
+        segments.push(`Land cover: ${geology.landcover}`);
+    }
+    const elevation = toFiniteNumber(geology?.elevationMeters);
     if (elevation !== null) {
-        return elevation <= 0;
+        segments.push(`Elevation: ${Math.round(elevation)} m`);
     }
-
-    if (hasDepth) {
-        return depth > 0;
-    }
-
-    return false;
+    return segments;
 }
 
 function buildGeologyPopup(geology) {
     if (!geology) {
         return "<strong>Location selected</strong><br>No surface data available.";
     }
-    const marineContext = shouldShowMarineContext(geology);
+    const surfaceContext = classifySurfaceContext(geology);
     const parts = [];
     if (geology.label) {
         parts.push(`<strong>${escapeHtml(geology.label)}</strong>`);
@@ -502,58 +662,11 @@ function buildGeologyPopup(geology) {
             parts.push(locationLine);
         }
     }
-    if (!marineContext) {
-        if (Number.isFinite(geology.elevationMeters)) {
-            parts.push(`Elevation: ${Math.round(geology.elevationMeters)} m`);
-        }
-        if (geology.surfaceType) {
-            parts.push(`Surface: ${escapeHtml(geology.surfaceType)}`);
-        }
-        if (geology.landcover) {
-            parts.push(`Land cover: ${escapeHtml(geology.landcover)}`);
-        }
-        if (geology.naturalFeature) {
-            parts.push(`Nearby feature: ${escapeHtml(geology.naturalFeature)}`);
-        }
-        const landDetails = [];
-        const formattedHighlights = formatLandHighlights(geology.highlights, geology.timezone);
-        if (formattedHighlights.length) {
-            const highlights = formattedHighlights.slice(0, 3).map(escapeHtml).join(", ");
-            landDetails.push(`Highlights: ${highlights}`);
-        }
-        if (geology.continent) {
-            landDetails.push(`Continent: ${escapeHtml(geology.continent)}`);
-        }
-        const timezoneLabel = formatTimezoneLabel(geology.timezone);
-        const highlightIncludesTimezone = formattedHighlights?.some((item) => /^Time zone:/i.test(item));
-        if (timezoneLabel && !highlightIncludesTimezone) {
-            landDetails.push(`Time zone: ${escapeHtml(timezoneLabel)}`);
-        }
-        if (landDetails.length) {
-            parts.push(...landDetails);
-        }
+    if (surfaceContext.kind !== "ocean") {
+        parts.push(...buildLandDetails(geology));
     }
-    const ocean = geology.ocean;
-    if (marineContext) {
-        if (geology.waterBody) {
-            parts.push(`Water body: ${escapeHtml(geology.waterBody)}`);
-        }
-        const oceanDepth = toFiniteNumber(ocean?.depthMeters);
-        if (oceanDepth !== null) {
-            const depthLabel = oceanDepth > 0
-                ? `${Math.round(oceanDepth)} m below mean sea level`
-                : `${Math.abs(Math.round(oceanDepth))} m above mean sea level`;
-            parts.push(`Depth: ${escapeHtml(depthLabel)}`);
-        }
-        if (Number.isFinite(ocean?.waveHeightMeters)) {
-            parts.push(`Significant wave height: ${ocean.waveHeightMeters.toFixed(1)} m`);
-        }
-        if (Number.isFinite(ocean?.surfaceTemperatureC)) {
-            parts.push(`Sea surface temperature: ${ocean.surfaceTemperatureC.toFixed(1)} °C`);
-        }
-        if (Number.isFinite(ocean?.wavePeriodSeconds)) {
-            parts.push(`Wave period: ${ocean.wavePeriodSeconds.toFixed(0)} s`);
-        }
+    if (surfaceContext.kind === "ocean") {
+        parts.push(...buildOceanDetails(geology.ocean, geology));
     }
     return parts.join("<br>");
 }
@@ -568,8 +681,8 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
 
     if (centerEnvironmentEl) {
         const segments = [];
-        const isOceanTarget = terrainSelect?.value === "water";
-        if (isOceanTarget) {
+        const surfaceContext = classifySurfaceContext(geology);
+        if (surfaceContext.kind === "ocean") {
             const depth = toFiniteNumber(geology?.ocean?.depthMeters);
             if (depth !== null) {
                 segments.push(`Depth: ${depth.toFixed(0)} m`);
@@ -578,17 +691,12 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
             if (waveHeight !== null && waveHeight > 0.1) {
                 segments.push(`Significant wave height: ${waveHeight.toFixed(1)} m`);
             }
+            const surfaceTemperature = toFiniteNumber(geology?.ocean?.surfaceTemperatureC);
+            if (surfaceTemperature !== null) {
+                segments.push(`Sea surface: ${surfaceTemperature.toFixed(1)} °C`);
+            }
         } else {
-            if (geology?.surfaceType) {
-                segments.push(geology.surfaceType);
-            }
-            if (geology?.landcover) {
-                segments.push(`Land cover: ${geology.landcover}`);
-            }
-            const elevation = toFiniteNumber(geology?.elevationMeters);
-            if (elevation !== null) {
-                segments.push(`Elevation: ${Math.round(elevation)} m`);
-            }
+            segments.push(...buildLandEnvironmentSegments(geology));
         }
         if (geology?.fallback) {
             segments.push("Surface data approximated");
