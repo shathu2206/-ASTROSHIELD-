@@ -770,6 +770,77 @@ async function resolvePopulation(lat, lng) {
     }
 }
 
+function collectReverseDescriptors(reverse) {
+    const descriptors = [];
+    const add = (value) => {
+        if (typeof value === "string") {
+            const trimmed = value.trim();
+            if (trimmed) {
+                descriptors.push(trimmed);
+            }
+        }
+    };
+
+    add(reverse?.ocean);
+    add(reverse?.lake);
+    add(reverse?.locality);
+    add(reverse?.principalSubdivision);
+    add(reverse?.description);
+    add(reverse?.continent);
+
+    const localityInfo = reverse?.localityInfo ?? {};
+    const pools = [localityInfo.informative, localityInfo.natural, localityInfo.administrative];
+    for (const pool of pools) {
+        if (!Array.isArray(pool)) continue;
+        for (const entry of pool) {
+            add(entry?.description);
+            add(entry?.name);
+        }
+    }
+
+    return descriptors;
+}
+
+function detectWaterContext(reverse) {
+    const descriptors = collectReverseDescriptors(reverse);
+    const marineRegex = /\b(ocean|sea|gulf|bay|strait|channel|sound|trench|deep|basin|abyss|current)\b/i;
+    const freshwaterRegex = /\b(lake|reservoir|river|pond|lagoon|marsh|swamp|creek|harbor|harbour)\b/i;
+
+    let marineLabel = null;
+    let freshwaterLabel = null;
+
+    for (const descriptor of descriptors) {
+        if (!marineLabel && marineRegex.test(descriptor)) {
+            marineLabel = descriptor;
+        }
+        if (!freshwaterLabel && freshwaterRegex.test(descriptor)) {
+            freshwaterLabel = descriptor;
+        }
+        if (marineLabel && freshwaterLabel) {
+            break;
+        }
+    }
+
+    const isOcean = Boolean(reverse?.isOcean || marineLabel);
+    const isLake = Boolean(reverse?.isLake || (!marineLabel && freshwaterLabel));
+
+    let waterBody = null;
+    if (isOcean) {
+        waterBody = reverse?.ocean || marineLabel || null;
+    } else if (isLake) {
+        waterBody = reverse?.lake || freshwaterLabel || null;
+    } else if (marineLabel || freshwaterLabel) {
+        waterBody = marineLabel || freshwaterLabel;
+    }
+
+    return {
+        isOcean,
+        isLake,
+        waterBody,
+        hasMarineDescriptor: Boolean(marineLabel)
+    };
+}
+
 function inferSurfaceType({ reverse, elevation, landcover }) {
     if (reverse?.isOcean) {
         return reverse.ocean ? `Open ocean (${reverse.ocean})` : "Open ocean";
@@ -935,12 +1006,32 @@ async function resolveGeology(lat, lng) {
         highlights.push(natural[0]?.description || natural[0]?.name);
     }
 
+    const waterContext = detectWaterContext(reverse);
+    if (waterContext.isOcean && !reverse.isOcean) {
+        reverse.isOcean = true;
+    }
+    if (waterContext.isLake && !reverse.isLake) {
+        reverse.isLake = true;
+    }
+    if (waterContext.isOcean && waterContext.waterBody && !reverse.ocean) {
+        reverse.ocean = waterContext.waterBody;
+    }
+    if (waterContext.isLake && waterContext.waterBody && !reverse.lake) {
+        reverse.lake = waterContext.waterBody;
+    }
+
     let ocean = null;
     try {
         ocean = await resolveOceanContext(lat, lng);
     } catch (error) {
         ocean = null;
     }
+
+    const waterBodyLabel = reverse.isOcean
+        ? reverse.ocean || waterContext.waterBody || "Open ocean"
+        : reverse.isLake
+        ? reverse.lake || waterContext.waterBody || "Lake"
+        : waterContext.waterBody;
 
     const geology = {
         label,
@@ -951,7 +1042,7 @@ async function resolveGeology(lat, lng) {
         surfaceType: inferSurfaceType({ reverse, elevation, landcover: landcoverLabel, lat }),
         landcover: landcoverLabel,
         naturalFeature: natural[0]?.name || null,
-        waterBody: reverse.isOcean ? reverse.ocean || "Open ocean" : reverse.isLake ? reverse.lake || "Lake" : null,
+        waterBody: waterBodyLabel || null,
         timezone: reverse.timezone || null,
         highlights: highlights.filter(Boolean),
         ocean,

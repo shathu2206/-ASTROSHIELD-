@@ -459,6 +459,9 @@ function classifySurfaceContext(geology) {
 
     let marineScore = 0;
     let landScore = 0;
+    let hasMarineDescriptor = false;
+    const marineNameRegex = /\b(ocean|sea|gulf|bay|strait|channel|sound|trench|deep|basin)\b/;
+    const freshwaterNameRegex = /\b(lake|reservoir|river|pond|lagoon|marsh|swamp|creek|harbor|harbour)\b/;
 
     if (depth !== null) {
         if (depth > 5) {
@@ -494,7 +497,8 @@ function classifySurfaceContext(geology) {
     if (surfaceType) {
         if (/water|ocean|sea/.test(surfaceType)) {
             marineScore += 1;
-        } else {
+            hasMarineDescriptor = true;
+        } else if (surfaceType !== "continental landmass") {
             landScore += 1;
         }
     }
@@ -503,6 +507,7 @@ function classifySurfaceContext(geology) {
     if (landcover) {
         if (/water|wetland|marsh|swamp|bog/.test(landcover)) {
             marineScore += 1;
+            hasMarineDescriptor = true;
         } else {
             landScore += 1;
         }
@@ -512,17 +517,38 @@ function classifySurfaceContext(geology) {
     if (naturalFeature) {
         if (/sea|ocean|bay|gulf|strait|channel|sound/.test(naturalFeature)) {
             marineScore += 1;
+            hasMarineDescriptor = true;
         } else {
             landScore += 1;
         }
     }
 
     if (Array.isArray(geology.highlights) && geology.highlights.length) {
-        landScore += 1;
+        let highlightMarine = false;
+        let highlightLand = false;
+        for (const item of geology.highlights) {
+            const normalized = normalizeDescriptor(item);
+            if (!normalized) continue;
+            if (marineNameRegex.test(normalized)) {
+                highlightMarine = true;
+                hasMarineDescriptor = true;
+            } else if (freshwaterNameRegex.test(normalized)) {
+                highlightLand = true;
+            } else if (/\b(continent|state|province|territory|mountain|plateau|island|park|reserve|forest|desert|plain)\b/.test(normalized)) {
+                highlightLand = true;
+            }
+        }
+        if (highlightMarine) {
+            marineScore += 1;
+        } else if (highlightLand) {
+            landScore += 1;
+        }
     }
 
     if (geology.continent) {
-        landScore += 2;
+        if (!geology.waterBody || !marineNameRegex.test(normalizeDescriptor(geology.waterBody))) {
+            landScore += 2;
+        }
     }
 
     if (elevationAtSurface !== null) {
@@ -535,9 +561,10 @@ function classifySurfaceContext(geology) {
 
     const waterBodyName = normalizeDescriptor(geology.waterBody);
     if (waterBodyName) {
-        if (/\b(ocean|sea|gulf|bay|strait|channel|sound|basin|trench|deep)\b/.test(waterBodyName)) {
+        if (marineNameRegex.test(waterBodyName)) {
             marineScore += 2;
-        } else if (/\b(lake|river|reservoir|pond|lagoon|marsh|swamp|creek|harbor|harbour)\b/.test(waterBodyName)) {
+            hasMarineDescriptor = true;
+        } else if (freshwaterNameRegex.test(waterBodyName)) {
             landScore += 1;
         }
     }
@@ -547,6 +574,13 @@ function classifySurfaceContext(geology) {
         marineScore += 1;
     } else if (selectedTerrain && selectedTerrain !== "water") {
         landScore += 1;
+    }
+
+    if (hasMarineDescriptor && marineScore === 0) {
+        marineScore = 1;
+    }
+    if (!hasMarineDescriptor && geology?.ocean && marineScore === 0) {
+        marineScore = 1;
     }
 
     let kind = "unknown";
