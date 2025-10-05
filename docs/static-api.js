@@ -234,7 +234,13 @@ async function resolveOceanContext(lat, lng, { signal } = {}) {
         const elevation = Number(result?.elevation);
         if (Number.isFinite(elevation)) {
             context.elevationMeters = elevation;
-            context.depthMeters = elevation < 0 ? Math.abs(elevation) : 0;
+            if (elevation < -0.5) {
+                context.depthMeters = Math.abs(elevation);
+            } else if (elevation > 0.5) {
+                context.depthMeters = null;
+            } else {
+                context.depthMeters = 0;
+            }
             context.source.push("GEBCO 2020 via OpenTopoData");
         }
     } catch (error) {

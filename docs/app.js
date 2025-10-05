@@ -449,8 +449,8 @@ function shouldShowMarineContext(geology) {
     }
 
     const ocean = geology.ocean;
-    const depth = Number(ocean?.depthMeters);
-    const hasDepth = Number.isFinite(depth);
+    const depth = toFiniteNumber(ocean?.depthMeters);
+    const hasDepth = depth !== null;
     const depthSuggestsLand = hasDepth && depth < 0;
     const selectedTerrain = terrainSelect?.value;
 
@@ -475,13 +475,13 @@ function shouldShowMarineContext(geology) {
         return false;
     }
 
-    const elevation = Number(ocean.elevationMeters);
-    if (Number.isFinite(elevation)) {
+    const elevation = toFiniteNumber(ocean?.elevationMeters);
+    if (elevation !== null) {
         return elevation <= 0;
     }
 
     if (hasDepth) {
-        return depth >= 0;
+        return depth > 0;
     }
 
     return false;
@@ -538,10 +538,11 @@ function buildGeologyPopup(geology) {
         if (geology.waterBody) {
             parts.push(`Water body: ${escapeHtml(geology.waterBody)}`);
         }
-        if (ocean && Number.isFinite(ocean.depthMeters)) {
-            const depthLabel = ocean.depthMeters > 0
-                ? `${Math.round(ocean.depthMeters)} m below mean sea level`
-                : `${Math.abs(Math.round(ocean.depthMeters))} m above mean sea level`;
+        const oceanDepth = toFiniteNumber(ocean?.depthMeters);
+        if (oceanDepth !== null) {
+            const depthLabel = oceanDepth > 0
+                ? `${Math.round(oceanDepth)} m below mean sea level`
+                : `${Math.abs(Math.round(oceanDepth))} m above mean sea level`;
             parts.push(`Depth: ${escapeHtml(depthLabel)}`);
         }
         if (Number.isFinite(ocean?.waveHeightMeters)) {
@@ -569,12 +570,12 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
         const segments = [];
         const isOceanTarget = terrainSelect?.value === "water";
         if (isOceanTarget) {
-            const depth = Number(geology?.ocean?.depthMeters);
-            if (Number.isFinite(depth)) {
+            const depth = toFiniteNumber(geology?.ocean?.depthMeters);
+            if (depth !== null) {
                 segments.push(`Depth: ${depth.toFixed(0)} m`);
             }
-            const waveHeight = Number(geology?.ocean?.waveHeightMeters);
-            if (Number.isFinite(waveHeight) && waveHeight > 0.1) {
+            const waveHeight = toFiniteNumber(geology?.ocean?.waveHeightMeters);
+            if (waveHeight !== null && waveHeight > 0.1) {
                 segments.push(`Significant wave height: ${waveHeight.toFixed(1)} m`);
             }
         } else {
@@ -584,8 +585,8 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
             if (geology?.landcover) {
                 segments.push(`Land cover: ${geology.landcover}`);
             }
-            const elevation = Number(geology?.elevationMeters);
-            if (Number.isFinite(elevation)) {
+            const elevation = toFiniteNumber(geology?.elevationMeters);
+            if (elevation !== null) {
                 segments.push(`Elevation: ${Math.round(elevation)} m`);
             }
         }
