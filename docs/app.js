@@ -1,3 +1,5 @@
+import { fetchApiJson, isStaticMode } from "./static-api.js";
+
 const mapContainer = document.getElementById("map");
 const mapStatusEl = document.getElementById("map-status");
 const centerCoordinatesEl = document.getElementById("center-coordinates");
@@ -299,11 +301,9 @@ async function loadPopulation() {
             lat: selectedLocation.lat,
             lng: selectedLocation.lng
         });
-        const response = await fetch(`/api/population?${params.toString()}`, {
+        const data = await fetchApiJson(`/api/population?${params.toString()}`, {
             signal: controller.signal
         });
-        if (!response.ok) throw new Error("Population request failed");
-        const data = await response.json();
         renderPopulation(data);
     } catch (error) {
         if (error.name === "AbortError") return;
@@ -357,9 +357,7 @@ async function loadGeology() {
             lat: selectedLocation.lat,
             lng: selectedLocation.lng
         });
-        const response = await fetch(`/api/geology?${params.toString()}`);
-        if (!response.ok) throw new Error("Geology request failed");
-        const geology = await response.json();
+        const geology = await fetchApiJson(`/api/geology?${params.toString()}`);
         applyGeologyToUI(geology, { openPopup: true });
         updateMapStatus("Impact pin updated");
     } catch (error) {
@@ -793,13 +791,11 @@ async function runSimulation() {
         summaryText.textContent = "Running impact simulation...";
     }
     try {
-        const response = await fetch("/api/simulate", {
+        const data = await fetchApiJson("/api/simulate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body)
         });
-        if (!response.ok) throw new Error("Simulation request failed");
-        const data = await response.json();
         renderResults(data);
         updateMapStatus("Simulation updated");
     } catch (error) {
@@ -1219,11 +1215,7 @@ function isUsingDefaultAsteroidRange() {
 
 async function fetchOfflineAsteroidCatalog() {
     try {
-        const response = await fetch("/api/asteroids/offline");
-        if (!response.ok) {
-            throw new Error(`Offline catalog request failed with status ${response.status}`);
-        }
-        const payload = await response.json();
+        const payload = await fetchApiJson("/api/asteroids/offline");
         const asteroids = Array.isArray(payload?.asteroids) ? payload.asteroids : [];
         return {
             asteroids,
@@ -1266,9 +1258,7 @@ async function fetchAsteroidCatalog({ append = false } = {}) {
     if (asteroidSearchState.hazardousOnly) params.set("hazardous", "true");
 
     try {
-        const response = await fetch(`/api/asteroids/search?${params.toString()}`);
-        if (!response.ok) throw new Error("Failed to query asteroid catalog");
-        const payload = await response.json();
+        const payload = await fetchApiJson(`/api/asteroids/search?${params.toString()}`);
 
         if (payload?.filters) {
             const normalizedStart = sanitizeDateInput(payload.filters.startDate);
@@ -1416,15 +1406,17 @@ function resetAsteroidSearch() {
 
 function initializeAsteroidCatalog() {
     resetAsteroidSearch();
+    if (isStaticMode && asteroidMeta) {
+        asteroidMeta.textContent =
+            "Static hosting mode: live data loads directly from NASA and open data APIs. Offline presets are used if services are unavailable.";
+    }
 }
 
 async function geocode(query) {
     if (!query) return;
     try {
         updateMapStatus("Geocoding...");
-        const response = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`);
-        if (!response.ok) throw new Error("Geocode request failed");
-        const data = await response.json();
+        const data = await fetchApiJson(`/api/geocode?query=${encodeURIComponent(query)}`);
         if (data?.results?.length) {
             const first = data.results[0];
             const cleanedLabel = stripTimeZoneLabel(first.label);

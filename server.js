@@ -2,7 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 import { execFile } from "node:child_process";
-import fallbackAsteroids from "./data/asteroids-fallback.json" with { type: "json" };
+import fallbackAsteroids from "./docs/data/asteroids-fallback.json" with { type: "json" };
 
 dotenv.config();
 
@@ -13,7 +13,7 @@ const DEFAULT_USER_AGENT = "AsteroidImpactLab/1.0 (+https://example.com/contact)
 const MS_PER_DAY = 86_400_000;
 
 app.use(express.json({ limit: "1mb" }));
-app.use(express.static("public"));
+app.use(express.static("docs"));
 
 const TERRAIN = {
     land: { label: "continental crust", density: 2600, dampening: 1 },

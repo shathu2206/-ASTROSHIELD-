@@ -25,13 +25,19 @@ Interactive asteroid impact sandbox with live satellite map targeting, asteroid 
 npm start
 ```
 
-Always start the Node.js server instead of opening `public/index.html` directly in your browser (for example via "Open with Live Server" in VS Code). The frontend depends on the backend routes under `/api/*` to proxy NASA and other third-party requests. If you skip `npm start`, those network calls fail with `ERR_CONNECTION_REFUSED` and the UI shows "Data not loaded" status messages.
+Always start the Node.js server instead of double-clicking `docs/index.html` or using "Open with Live Server". The frontend expects `/api/*` routes for population, geology, simulation, and asteroid data. If you skip `npm start`, those calls fail with `ERR_CONNECTION_REFUSED` and the UI shows "Data not loaded" status messages.
 
-When `npm start` is running you can browse to http://localhost:3000. The Express server hosts the UI from `public/` and exposes API endpoints for the simulation, population lookup, geocoding, and NASA NEO datasets. NASA requests are proxied through the server so your API key stays on the backend.
+When `npm start` is running you can browse to http://localhost:3000. The Express server now serves the static site from `docs/` (the same directory GitHub Pages uses) and exposes API endpoints for the simulation, population lookup, geocoding, and NASA NEO datasets. NASA requests are proxied through the server so your API key stays on the backend.
+
+## GitHub Pages / static hosting
+
+GitHub Pages looks for content inside `docs/`, so the production-ready HTML, CSS, and JavaScript live there. When the site is served from a static host such as `https://<user>.github.io/<repo>/` the browser calls public APIs (NASA NeoWs, BigDataCloud, Open-Meteo, OpenTopoData, maps.co) directly. If any provider is offline or rate limited the client automatically falls back to `docs/data/asteroids-fallback.json` and heuristic estimators, so the interface continues to work even without the Node.js proxy.
+
+Running `npm start` locally restores the Express proxy, which keeps your NASA API key private, offers better error messages, and avoids browser CORS limitations. Both hosting modes share the same `docs/` assets, so fixes in that folder immediately apply to GitHub Pages and to the local server.
 
 ### Environment variables
 
-- `NASA_API_KEY` – personal key from https://api.nasa.gov/. If omitted the app uses NASA's shared `DEMO_KEY`, which is heavily rate limited. When NASA returns an error (for example due to rate limits) the UI automatically falls back to the bundled offline dataset in `data/asteroids-fallback.json`.
+- `NASA_API_KEY` – personal key from https://api.nasa.gov/. If omitted the app uses NASA's shared `DEMO_KEY`, which is heavily rate limited. When NASA returns an error (for example due to rate limits) the UI automatically falls back to the bundled offline dataset in `docs/data/asteroids-fallback.json`.
 
 If you're working inside VS Code:
 
@@ -100,12 +106,12 @@ When NASA's key is omitted the server falls back to the documented `DEMO_KEY`, b
 - **Economic loss estimate** (`server.js`:369-373) - evaluates `loss = fatalities * 4_200_000 * max(density/100, 0.2) * log1p(12 * severe_radius_km)`. Custom heuristic with no external citation.
 - **Tsunami amplitude and attenuation** (`server.js`:512-533) - uses impact-tsunami scaling `H_source = min(6 * E_mt^0.28 / depth_factor, 800 * crater_radius_km)` and coastal attenuation `H_coast = H_source * (crater_radius_km / distance_km)^1.1`, then run-up `1.35 * H_coast` and inundation reach heuristics. Based on Ward and Asphaug (2000) with custom extensions.
 - **Shallow-water wave speed** (`server.js`:523-525) - computes arrival time via `c = sqrt(g * depth)` from linear wave theory. Source: Dean and Dalrymple (1991).
-- **UI unit conversions** (`public/app.js`:861-904) - formats distances (meters to kilometers), velocities (m/s to mph with factor 2.23694), currency, and heights using standard SI conversions. Source: [NIST Guide to the SI](https://physics.nist.gov/cuu/Units/index.html).
-- **Log-scale size comparison** (`public/app.js`:972-993) - ranks familiar object analogs by minimizing `abs(log(diameter / reference_size))`. Custom UX heuristic without external citation.
+- **UI unit conversions** (`docs/app.js`) - formats distances (meters to kilometers), velocities (m/s to mph with factor 2.23694), currency, and heights using standard SI conversions. Source: [NIST Guide to the SI](https://physics.nist.gov/cuu/Units/index.html).
+- **Log-scale size comparison** (`docs/app.js`) - ranks familiar object analogs by minimizing `abs(log(diameter / reference_size))`. Custom UX heuristic without external citation.
 
 ## External APIs & Data Sources
 
-- **Esri ArcGIS World Imagery and Reference Layers** (`public/app.js`:162-178) - satellite basemap and labels. Free basemap usage with attribution. [Docs](https://www.esri.com/en-us/arcgis/products/arcgis-online/resources/basemap).
+- **Esri ArcGIS World Imagery and Reference Layers** (`docs/app.js`) - satellite basemap and labels. Free basemap usage with attribution. [Docs](https://www.esri.com/en-us/arcgis/products/arcgis-online/resources/basemap).
 - **BigDataCloud Reverse Geocode Client** (`server.js`:62-109) - locality metadata, bounding boxes, and ocean or lake flags. Free tier, no key. [Docs](https://www.bigdatacloud.com/docs/api/free-reverse-geocode-to-city-api).
 - **Open-Meteo Geocoding API** (`server.js`:79-85) - resolves locality population counts. Free and keyless. [Docs](https://open-meteo.com/en/docs/geocoding-api).
 - **Open-Meteo Elevation and Landcover APIs** (`server.js`:214-236) - supplies terrain elevation and dominant landcover. Free and keyless. [Docs](https://open-meteo.com/en/docs).
