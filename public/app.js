@@ -163,6 +163,13 @@ let selectedLocation = null;
 let populationAbortController = null;
 let mapStatusTimer = null;
 
+function stripTimeZoneLabel(text) {
+    if (typeof text !== "string") {
+        return text;
+    }
+    return text.replace(/\s*\|\s*time zone.*$/i, "").trim();
+}
+
 function formatCoordinate(lat, lng) {
     const degreeSymbol = "\u00B0";
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -251,7 +258,7 @@ function placeImpactMarker(lat, lng, label) {
         impactMarker.setLatLng([lat, lng]);
     }
 
-    const description = label || formatCoordinate(lat, lng);
+    const description = stripTimeZoneLabel(label) || formatCoordinate(lat, lng);
     setImpactLocation(lat, lng, description);
     loadPopulation();
     loadGeology();
@@ -269,7 +276,7 @@ function setImpactLocation(lat, lng, description) {
     selectedLocation = {
         lat,
         lng,
-        description: description || coordinateLabel
+        description: stripTimeZoneLabel(description) || coordinateLabel
     };
 
     applyGeologyToUI(null, { openPopup: false });
@@ -458,9 +465,6 @@ function buildGeologyPopup(geology) {
             parts.push(`<span class="source">Marine data: ${escapeHtml(ocean.source)}</span>`);
         }
     }
-    if (geology.timezone) {
-        parts.push(`Time zone: ${escapeHtml(geology.timezone)}`);
-    }
     if (geology.highlights?.length) {
         parts.push(`<em>${geology.highlights.map(escapeHtml).join(" | ")}</em>`);
     }
@@ -471,7 +475,8 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
     latestGeology = geology || null;
     const fallbackLabel = selectedLocation?.description || DEFAULT_COORDINATE_LABEL;
     if (centerLabelEl) {
-        centerLabelEl.textContent = geology?.label || fallbackLabel;
+        const geologyLabel = stripTimeZoneLabel(geology?.label);
+        centerLabelEl.textContent = geologyLabel || fallbackLabel;
     }
 
     if (centerEnvironmentEl) {
@@ -1428,9 +1433,10 @@ async function geocode(query) {
         const data = await response.json();
         if (data?.results?.length) {
             const first = data.results[0];
+            const cleanedLabel = stripTimeZoneLabel(first.label);
             map.setView([first.lat, first.lng], Math.max(map.getZoom() || 3, 7), { animate: true });
-            placeImpactMarker(first.lat, first.lng, first.label);
-            updateMapStatus(`Impact pin dropped at ${first.label}`);
+            placeImpactMarker(first.lat, first.lng, cleanedLabel);
+            updateMapStatus(`Impact pin dropped at ${cleanedLabel || first.label}`);
         } else {
             updateMapStatus("No matches found.");
             alert("No matches found for that query.");
