@@ -1392,6 +1392,85 @@ function computeDefaultAsteroidDateRange() {
     };
 }
 
+function tryExtractMessageFromJson(text) {
+    if (!text) return "";
+    const jsonStart = text.indexOf("{");
+    const jsonEnd = text.lastIndexOf("}");
+    if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart) {
+        return "";
+    }
+    const candidate = text.slice(jsonStart, jsonEnd + 1);
+    try {
+        const parsed = JSON.parse(candidate);
+        if (parsed?.error?.message) {
+            return parsed.error.message;
+        }
+        if (parsed?.message) {
+            return parsed.message;
+        }
+    } catch (error) {
+        console.debug("Failed to parse fallback JSON message", error);
+    }
+    return "";
+}
+
+function normalizeFallbackReason(value) {
+    if (value == null) return "";
+    const text = String(value).trim();
+    if (!text) return "";
+    const nested = tryExtractMessageFromJson(text);
+    if (nested) {
+        return nested.trim();
+    }
+    return text
+        .replace(/^Request failed \(\d+\):\s*/i, "")
+        .replace(/^NASA catalog unavailable:?/i, "")
+        .replace(/^NASA feed unavailable:?/i, "")
+        .trim();
+}
+
+function extractFallbackReasonFromSummary(summary) {
+    if (typeof summary !== "string") {
+        return "";
+    }
+    const match = summary.match(/NASA catalog unavailable:([^•]+)/i);
+    if (!match) {
+        return "";
+    }
+    let reason = match[1].trim();
+    const requestedIndex = reason.toLowerCase().indexOf("requested range");
+    if (requestedIndex !== -1) {
+        reason = reason.slice(0, requestedIndex).trim();
+    }
+    return reason.replace(/[.\s]+$/, "").trim();
+}
+
+function extractFallbackReason(payload) {
+    if (!payload) return "";
+    const candidates = [payload.fallbackReason, payload.error].map(normalizeFallbackReason);
+    for (const candidate of candidates) {
+        if (candidate) {
+            return candidate;
+        }
+    }
+    const summaryReason = extractFallbackReasonFromSummary(payload.summary);
+    return summaryReason ? normalizeFallbackReason(summaryReason) : "";
+}
+
+function buildAsteroidMetaMessage(payload) {
+    const defaultMessage =
+        DEFAULT_ASTEROID_META ||
+        "Near-Earth object data courtesy of NASA's NeoWs program. Select a result to auto-fill the simulator.";
+    if (!payload || payload.source !== "fallback") {
+        return defaultMessage;
+    }
+    const fallbackReason = extractFallbackReason(payload);
+    if (fallbackReason) {
+        return `NASA's live feed is unavailable right now (${fallbackReason}). We're showing the bundled asteroid presets.`;
+    }
+    return "NASA's live feed is unavailable right now, so we're showing the bundled asteroid presets.";
+}
+
 function enforceAsteroidDateBounds() {
     if (!asteroidStartDateInput || !asteroidEndDateInput) return;
     const startValue = sanitizeDateInput(asteroidStartDateInput.value);
@@ -1435,7 +1514,8 @@ async function fetchOfflineAsteroidCatalog() {
             asteroids,
             summary: payload?.summary ?? "Loaded offline asteroid catalog.",
             totalItems: Number(payload?.totalItems ?? asteroids.length) || asteroids.length,
-            source: payload?.source ?? "fallback"
+            source: payload?.source ?? "fallback",
+            fallbackReason: payload?.fallbackReason ?? null
         };
     } catch (offlineError) {
         console.error("Offline asteroid catalog unavailable.", offlineError);
@@ -1509,11 +1589,7 @@ async function fetchAsteroidCatalog({ append = false } = {}) {
         updateAsteroidSummary(payload);
 
         if (asteroidMeta) {
-            const metaMessage =
-                payload?.source === "fallback"
-                    ? "NASA's live feed is unavailable right now, so we're showing the bundled asteroid presets."
-                    : "Near-Earth object data courtesy of NASA's NeoWs program. Select a result to auto-fill the simulator.";
-            asteroidMeta.textContent = metaMessage;
+            asteroidMeta.textContent = buildAsteroidMetaMessage(payload);
         }
 
         if (asteroidLoadMoreBtn) {
@@ -1549,8 +1625,7 @@ async function fetchAsteroidCatalog({ append = false } = {}) {
                     }
                 });
                 if (asteroidMeta) {
-                    asteroidMeta.textContent =
-                        "NASA's live feed is unavailable right now, so we're showing the bundled asteroid presets.";
+                    asteroidMeta.textContent = buildAsteroidMetaMessage(offlineCatalog);
                 }
                 if (asteroidLoadMoreBtn) {
                     asteroidLoadMoreBtn.textContent = "Load more objects";

@@ -150,6 +150,44 @@ function combineAbortSignals(signals) {
     return controller.signal;
 }
 
+function extractNasaErrorMessage(error) {
+    if (!error) return null;
+    const rawMessage =
+        typeof error === "string"
+            ? error
+            : typeof error?.message === "string"
+            ? error.message
+            : String(error);
+    if (!rawMessage) {
+        return null;
+    }
+
+    const trimmed = rawMessage.trim();
+    const jsonStart = trimmed.indexOf("{");
+    const jsonEnd = trimmed.lastIndexOf("}");
+    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd >= jsonStart) {
+        const jsonCandidate = trimmed.slice(jsonStart, jsonEnd + 1);
+        try {
+            const parsed = JSON.parse(jsonCandidate);
+            if (parsed?.error?.message) {
+                return parsed.error.message;
+            }
+            if (parsed?.message) {
+                return parsed.message;
+            }
+        } catch (parseError) {
+            console.debug("Failed to parse NASA error payload", parseError);
+        }
+    }
+
+    const withoutPrefix = trimmed
+        .replace(/^Request failed \(\d+\):\s*/i, "")
+        .replace(/^NASA catalog unavailable:?/i, "")
+        .trim();
+
+    return withoutPrefix || null;
+}
+
 async function fetchExternalJson(url, { timeoutMs = 12000, signal, headers = {} } = {}) {
     const controller = new AbortController();
     const combinedSignal = combineAbortSignals([controller.signal, signal]);
@@ -1208,7 +1246,8 @@ async function fetchFallbackAsteroidsPayload() {
         totalItems: asteroids.length,
         hasMore: false,
         summary: `Loaded offline asteroid presets (${asteroids.length} objects).`,
-        source: "fallback"
+        source: "fallback",
+        fallbackReason: null
     };
 }
 
@@ -1257,6 +1296,7 @@ async function searchAsteroidsStatic(url, { signal } = {}) {
         };
     } catch (error) {
         console.warn("NASA asteroid catalog unavailable, using fallback dataset", error);
+        const fallbackReason = extractNasaErrorMessage(error);
         const fallback = await loadFallbackAsteroids();
         const filteredFallback = filterAsteroidRecords(fallback, {
             ...filters,
@@ -1268,7 +1308,7 @@ async function searchAsteroidsStatic(url, { signal } = {}) {
             : "";
         const summaryParts = [
             `Using offline asteroid presets (${filteredFallback.length} objects).`,
-            error?.message ? `NASA catalog unavailable: ${error.message}` : "NASA catalog unavailable.",
+            fallbackReason ? `NASA catalog unavailable: ${fallbackReason}` : "NASA catalog unavailable.",
             rangeNote.trim()
         ].filter(Boolean);
         return {
@@ -1281,7 +1321,8 @@ async function searchAsteroidsStatic(url, { signal } = {}) {
             summary: summaryParts.join(" ").replace(/\s+/g, " ").trim(),
             source: "fallback",
             filters,
-            error: error?.message ?? String(error)
+            error: error?.message ?? String(error),
+            fallbackReason: fallbackReason ?? null
         };
     }
 }

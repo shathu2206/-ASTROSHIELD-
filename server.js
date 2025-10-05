@@ -112,6 +112,44 @@ function combineAbortSignals(signals) {
     return relay.signal;
 }
 
+function extractNasaErrorMessage(error) {
+    if (!error) return null;
+    const rawMessage =
+        typeof error === "string"
+            ? error
+            : typeof error?.message === "string"
+            ? error.message
+            : String(error);
+    if (!rawMessage) {
+        return null;
+    }
+
+    const trimmed = rawMessage.trim();
+    const jsonStart = trimmed.indexOf("{");
+    const jsonEnd = trimmed.lastIndexOf("}");
+    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd >= jsonStart) {
+        const jsonCandidate = trimmed.slice(jsonStart, jsonEnd + 1);
+        try {
+            const parsed = JSON.parse(jsonCandidate);
+            if (parsed?.error?.message) {
+                return parsed.error.message;
+            }
+            if (parsed?.message) {
+                return parsed.message;
+            }
+        } catch (parseError) {
+            console.debug("Failed to parse NASA error payload", parseError);
+        }
+    }
+
+    const withoutPrefix = trimmed
+        .replace(/^Request failed \(\d+\):\s*/i, "")
+        .replace(/^NASA catalog unavailable:?/i, "")
+        .trim();
+
+    return withoutPrefix || null;
+}
+
 function shouldFallbackToCurl(error) {
     if (!error) return false;
     if (error.code === "ENETUNREACH") {
@@ -1522,6 +1560,7 @@ app.get("/api/asteroids/search", async (req, res) => {
             filters
         });
     } catch (error) {
+        const fallbackReason = extractNasaErrorMessage(error);
         const filteredFallback = filterAsteroidRecords(FALLBACK_ASTEROID_RECORDS, {
             ...filters,
             startDate: startDateValue,
@@ -1532,7 +1571,7 @@ app.get("/api/asteroids/search", async (req, res) => {
             : "";
         const summaryParts = [
             `Using offline asteroid presets (${filteredFallback.length} objects).`,
-            error?.message ? `NASA catalog unavailable: ${error.message}` : "NASA catalog unavailable.",
+            fallbackReason ? `NASA catalog unavailable: ${fallbackReason}` : "NASA catalog unavailable.",
             rangeNote.trim()
         ].filter(Boolean);
         res.json({
@@ -1545,7 +1584,8 @@ app.get("/api/asteroids/search", async (req, res) => {
             summary: summaryParts.join(" ").replace(/\s+/g, " ").trim(),
             source: "fallback",
             filters,
-            error: error.message
+            error: error.message,
+            fallbackReason: fallbackReason ?? null
         });
     }
 });
@@ -1558,10 +1598,13 @@ app.get("/api/asteroids", async (_req, res) => {
             summary
         });
     } catch (error) {
+        const fallbackReason = extractNasaErrorMessage(error);
         res.json({
             asteroids: FALLBACK_ASTEROID_RECORDS,
-            summary: `Using offline asteroid presets (${FALLBACK_ASTEROID_RECORDS.length} objects). NASA catalog unavailable: ${error.message}`,
-            source: "fallback"
+            summary: `Using offline asteroid presets (${FALLBACK_ASTEROID_RECORDS.length} objects). ${fallbackReason ? `NASA catalog unavailable: ${fallbackReason}` : "NASA catalog unavailable."}`,
+            source: "fallback",
+            fallbackReason: fallbackReason ?? null,
+            error: error.message
         });
     }
 });
@@ -1575,7 +1618,8 @@ app.get("/api/asteroids/offline", (_req, res) => {
         totalItems: FALLBACK_ASTEROID_RECORDS.length,
         hasMore: false,
         summary: `Loaded offline asteroid presets (${FALLBACK_ASTEROID_RECORDS.length} objects).`,
-        source: "fallback"
+        source: "fallback",
+        fallbackReason: null
     });
 });
 
