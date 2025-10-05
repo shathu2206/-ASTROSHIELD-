@@ -302,7 +302,16 @@ async function resolveOceanContext(lat, lng, { signal } = {}) {
     try {
         const bathymetry = await fetchExternalJson(`https://api.opentopodata.org/v1/gebco2020?locations=${lat},${lng}`, { signal });
         const result = bathymetry?.results?.[0];
-        const elevation = Number(result?.elevation);
+        const rawElevation = result?.elevation;
+        let elevation = null;
+        if (typeof rawElevation === "number") {
+            elevation = rawElevation;
+        } else if (typeof rawElevation === "string" && rawElevation.trim()) {
+            const parsed = Number(rawElevation);
+            if (Number.isFinite(parsed)) {
+                elevation = parsed;
+            }
+        }
         if (Number.isFinite(elevation)) {
             context.elevationMeters = elevation;
             if (elevation < -0.5) {
@@ -310,7 +319,7 @@ async function resolveOceanContext(lat, lng, { signal } = {}) {
             } else if (elevation > 0.5) {
                 context.depthMeters = null;
             } else {
-                context.depthMeters = 0;
+                context.depthMeters = null;
             }
             context.source.push("GEBCO 2020 via OpenTopoData");
         }
