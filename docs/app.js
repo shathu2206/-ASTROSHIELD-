@@ -438,6 +438,20 @@ function buildGeologyPopup(geology) {
         if (geology.naturalFeature) {
             parts.push(`Nearby feature: ${escapeHtml(geology.naturalFeature)}`);
         }
+        const landDetails = [];
+        if (Array.isArray(geology.highlights) && geology.highlights.length) {
+            const highlights = geology.highlights.slice(0, 3).map(escapeHtml).join(", ");
+            landDetails.push(`Highlights: ${highlights}`);
+        }
+        if (geology.continent) {
+            landDetails.push(`Continent: ${escapeHtml(geology.continent)}`);
+        }
+        if (geology.timezone) {
+            landDetails.push(`Time zone: ${escapeHtml(geology.timezone)}`);
+        }
+        if (landDetails.length) {
+            parts.push(...landDetails);
+        }
     }
     const ocean = geology.ocean;
     if (marineContext) {
