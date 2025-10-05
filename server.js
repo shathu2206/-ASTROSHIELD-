@@ -2,7 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 import { execFile } from "node:child_process";
-import fallbackAsteroids from "./data/asteroids-fallback.json" with { type: "json" };
+import fallbackAsteroids from "./docs/data/asteroids-fallback.json" with { type: "json" };
 
 dotenv.config();
 
