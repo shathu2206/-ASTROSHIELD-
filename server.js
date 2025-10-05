@@ -131,11 +131,37 @@ function extractNasaErrorMessage(error) {
         const jsonCandidate = trimmed.slice(jsonStart, jsonEnd + 1);
         try {
             const parsed = JSON.parse(jsonCandidate);
-            if (parsed?.error?.message) {
-                return parsed.error.message;
+            const nestedMessages = [];
+            if (parsed?.error && typeof parsed.error === "object") {
+                nestedMessages.push(parsed.error.message, parsed.error.msg, parsed.error.detail, parsed.error.details);
+                if (Array.isArray(parsed.error.messages)) {
+                    nestedMessages.push(...parsed.error.messages);
+                }
             }
-            if (parsed?.message) {
-                return parsed.message;
+            if (Array.isArray(parsed?.errors)) {
+                for (const entry of parsed.errors) {
+                    if (entry && typeof entry === "object") {
+                        nestedMessages.push(entry.message, entry.detail, entry.error);
+                    } else if (typeof entry === "string") {
+                        nestedMessages.push(entry);
+                    }
+                }
+            }
+            nestedMessages.push(
+                parsed?.error_message,
+                parsed?.errorMessage,
+                parsed?.message,
+                parsed?.detail,
+                parsed?.details,
+                parsed?.reason,
+                parsed?.http_error,
+                parsed?.error
+            );
+
+            for (const candidate of nestedMessages) {
+                if (typeof candidate === "string" && candidate.trim()) {
+                    return candidate.trim();
+                }
             }
         } catch (parseError) {
             console.debug("Failed to parse NASA error payload", parseError);
