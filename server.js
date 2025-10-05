@@ -12,6 +12,8 @@ const NASA_API_KEY = process.env.NASA_API_KEY || "DEMO_KEY";
 const DEFAULT_USER_AGENT = "AsteroidImpactLab/1.0 (+https://example.com/contact)";
 const MS_PER_DAY = 86_400_000;
 
+const MIN_MARINE_DEPTH_METERS = 5;
+
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static("docs"));
 
@@ -906,9 +908,8 @@ async function resolveOceanContext(lat, lng) {
         if (Number.isFinite(elevation)) {
             context.elevationMeters = elevation;
             if (elevation < -0.5) {
-                context.depthMeters = Math.abs(elevation);
-            } else if (elevation > 0.5) {
-                context.depthMeters = null;
+                const depth = Math.abs(elevation);
+                context.depthMeters = depth >= MIN_MARINE_DEPTH_METERS ? depth : null;
             } else {
                 context.depthMeters = null;
             }
@@ -951,7 +952,7 @@ async function resolveOceanContext(lat, lng) {
 function buildFallbackReverse(lat, lng, error) {
     const latHemisphere = lat >= 0 ? "N" : "S";
     const lngHemisphere = lng >= 0 ? "E" : "W";
-    const coordinateLabel = `${Math.abs(lat).toFixed(2)}°${latHemisphere}, ${Math.abs(lng).toFixed(2)}°${lngHemisphere}`;
+    const coordinateLabel = `${Math.abs(lat).toFixed(2)}\u00B0${latHemisphere}, ${Math.abs(lng).toFixed(2)}\u00B0${lngHemisphere}`;
     return {
         city: null,
         locality: null,
@@ -1300,7 +1301,7 @@ function buildFootprints(impact, casualties, infrastructure, tsunami) {
 
 function computeTsunamiImpact({ impact, oceanContext, populationInfo, explicitPopulation }) {
     const depthMeters = Number(oceanContext?.depthMeters);
-    if (!Number.isFinite(depthMeters) || depthMeters <= 5) {
+    if (!Number.isFinite(depthMeters) || depthMeters <= MIN_MARINE_DEPTH_METERS) {
         return null;
     }
 
@@ -1356,7 +1357,7 @@ function buildSummary(parameters, impact, location, populationInfo, tsunami) {
         ? ` Tsunami modelling projects coastal wave heights near ${Math.max(tsunami.coastalWaveHeight / 1000, 0).toFixed(1)} m with inundation reaching about ${tsunami.inundationDistanceKm.toFixed(1)} km inland.`
         : "";
 
-    const angleText = `${angleDeg.toFixed(0)}°`;
+    const angleText = `${angleDeg.toFixed(0)}\u00B0`;
     return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleText} and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
 }
 

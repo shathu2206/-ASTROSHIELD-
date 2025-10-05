@@ -134,6 +134,8 @@ const SIZE_REFERENCES = [
     { size: 77000, label: "the width of Rhode Island (~77 km)" }
 ];
 
+const MIN_MARINE_DEPTH_METERS = 5;
+
 function toFiniteNumber(value) {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : null;
@@ -464,13 +466,11 @@ function classifySurfaceContext(geology) {
     const freshwaterNameRegex = /\b(lake|reservoir|river|pond|lagoon|marsh|swamp|creek|harbor|harbour)\b/;
 
     if (depth !== null) {
-        if (depth > 5) {
+        if (depth > MIN_MARINE_DEPTH_METERS) {
             marineScore += 3;
-        } else if (depth > 0) {
+        } else if (depth > 1) {
             marineScore += 2;
-        } else if (depth === 0) {
-            landScore += 1;
-        } else {
+        } else if (depth < 0) {
             landScore += 2;
         }
     }
@@ -647,17 +647,20 @@ function buildOceanDetails(ocean, geology) {
         details.push(`Water body: ${escapeHtml(geology.waterBody)}`);
     }
     const oceanDepth = toFiniteNumber(ocean.depthMeters);
-    if (oceanDepth !== null) {
-        const depthLabel = oceanDepth > 0
-            ? `${Math.round(oceanDepth)} m below mean sea level`
-            : `${Math.abs(Math.round(oceanDepth))} m above mean sea level`;
+    if (oceanDepth !== null && oceanDepth >= MIN_MARINE_DEPTH_METERS) {
+        const depthLabel = `${Math.round(oceanDepth)} m below mean sea level`;
         details.push(`Depth: ${escapeHtml(depthLabel)}`);
+    } else if (oceanDepth !== null && oceanDepth < 0) {
+        const depthLabel = `${Math.abs(Math.round(oceanDepth))} m above mean sea level`;
+        details.push(`Depth: ${escapeHtml(depthLabel)}`);
+    } else {
+        details.push("Depth: unknown");
     }
     if (Number.isFinite(ocean.waveHeightMeters)) {
         details.push(`Significant wave height: ${ocean.waveHeightMeters.toFixed(1)} m`);
     }
     if (Number.isFinite(ocean.surfaceTemperatureC)) {
-        details.push(`Sea surface temperature: ${ocean.surfaceTemperatureC.toFixed(1)} °C`);
+        details.push(`Sea surface temperature: ${ocean.surfaceTemperatureC.toFixed(1)} \u00B0C`);
     }
     if (Number.isFinite(ocean.wavePeriodSeconds)) {
         details.push(`Wave period: ${ocean.wavePeriodSeconds.toFixed(0)} s`);
@@ -718,8 +721,10 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
         const surfaceContext = classifySurfaceContext(geology);
         if (surfaceContext.kind === "ocean") {
             const depth = toFiniteNumber(geology?.ocean?.depthMeters);
-            if (depth !== null) {
-                segments.push(`Depth: ${depth.toFixed(0)} m`);
+            if (depth !== null && depth >= MIN_MARINE_DEPTH_METERS) {
+                segments.push(`Depth: ${Math.round(depth)} m`);
+            } else {
+                segments.push("Depth: unknown");
             }
             const waveHeight = toFiniteNumber(geology?.ocean?.waveHeightMeters);
             if (waveHeight !== null && waveHeight > 0.1) {
@@ -727,7 +732,7 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
             }
             const surfaceTemperature = toFiniteNumber(geology?.ocean?.surfaceTemperatureC);
             if (surfaceTemperature !== null) {
-                segments.push(`Sea surface: ${surfaceTemperature.toFixed(1)} °C`);
+                segments.push(`Sea surface: ${surfaceTemperature.toFixed(1)} \u00B0C`);
             }
         } else {
             segments.push(...buildLandEnvironmentSegments(geology));
