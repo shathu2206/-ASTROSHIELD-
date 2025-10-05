@@ -461,12 +461,6 @@ function buildGeologyPopup(geology) {
         if (Number.isFinite(ocean?.wavePeriodSeconds)) {
             parts.push(`Wave period: ${ocean.wavePeriodSeconds.toFixed(0)} s`);
         }
-        if (ocean?.source) {
-            parts.push(`<span class="source">Marine data: ${escapeHtml(ocean.source)}</span>`);
-        }
-    }
-    if (geology.highlights?.length) {
-        parts.push(`<em>${geology.highlights.map(escapeHtml).join(" | ")}</em>`);
     }
     return parts.join("<br>");
 }
