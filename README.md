@@ -121,3 +121,5 @@ When NASA's key is omitted the server falls back to the documented `DEMO_KEY`, b
 - **NASA NeoWs (Near Earth Object Web Service)** (`server.js`:617-635) - asteroid preset catalog. Free with API key (DEMO_KEY default). [Docs](https://api.nasa.gov/).
 
 > Maintenance note: update these sections whenever physics models, heuristics, or external data sources change so the README stays authoritative.
+#   A s t r o s h i e l d  
+ 
