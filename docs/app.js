@@ -134,7 +134,6 @@ const SIZE_REFERENCES = [
     { size: 77000, label: "the width of Rhode Island (~77 km)" }
 ];
 
-const MIN_MARINE_DEPTH_METERS = 0;
 
 function toFiniteNumber(value) {
     const numeric = Number(value);
@@ -455,7 +454,6 @@ function classifySurfaceContext(geology) {
     }
 
     const ocean = geology.ocean || {};
-    const depth = toFiniteNumber(ocean.depthMeters);
     const elevationAtSurface = toFiniteNumber(geology.elevationMeters);
     const oceanElevation = toFiniteNumber(ocean.elevationMeters);
 
@@ -464,16 +462,6 @@ function classifySurfaceContext(geology) {
     let hasMarineDescriptor = false;
     const marineNameRegex = /\b(ocean|sea|gulf|bay|strait|channel|sound|trench|deep|basin)\b/;
     const freshwaterNameRegex = /\b(lake|reservoir|river|pond|lagoon|marsh|swamp|creek|harbor|harbour)\b/;
-
-    if (depth !== null) {
-        if (depth > MIN_MARINE_DEPTH_METERS) {
-            marineScore += 3;
-        } else if (depth > 1) {
-            marineScore += 2;
-        } else if (depth < 0) {
-            landScore += 2;
-        }
-    }
 
     if (oceanElevation !== null) {
         if (oceanElevation > 1) {
@@ -646,13 +634,6 @@ function buildOceanDetails(ocean, geology) {
     if (geology?.waterBody) {
         details.push(`Water body: ${escapeHtml(geology.waterBody)}`);
     }
-    const oceanDepth = toFiniteNumber(ocean.depthMeters);
-    if (oceanDepth !== null && oceanDepth >= MIN_MARINE_DEPTH_METERS) {
-        const depthLabel = `${Math.round(oceanDepth)} m below mean sea level`;
-        details.push(`Depth: ${escapeHtml(depthLabel)}`);
-    }  else {
-        details.push("Depth: unknown");
-    }
     if (Number.isFinite(ocean.waveHeightMeters)) {
         details.push(`Significant wave height: ${ocean.waveHeightMeters.toFixed(1)} m`);
     }
@@ -717,12 +698,6 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
         const segments = [];
         const surfaceContext = classifySurfaceContext(geology);
         if (surfaceContext.kind === "ocean") {
-            const depth = toFiniteNumber(geology?.ocean?.depthMeters);
-            if (depth !== null && depth >= MIN_MARINE_DEPTH_METERS) {
-                segments.push(`Depth: ${Math.round(depth)} m`);
-            } else {
-                segments.push("Depth: unknown");
-            }
             const waveHeight = toFiniteNumber(geology?.ocean?.waveHeightMeters);
             if (waveHeight !== null && waveHeight > 0.1) {
                 segments.push(`Significant wave height: ${waveHeight.toFixed(1)} m`);

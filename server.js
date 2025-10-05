@@ -12,8 +12,6 @@ const NASA_API_KEY = process.env.NASA_API_KEY || "DEMO_KEY";
 const DEFAULT_USER_AGENT = "AsteroidImpactLab/1.0 (+https://example.com/contact)";
 const MS_PER_DAY = 86_400_000;
 
-const MIN_MARINE_DEPTH_METERS = 5;
-
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static("docs"));
 
@@ -884,7 +882,6 @@ function inferSurfaceType({ reverse, elevation, landcover }) {
 
 async function resolveOceanContext(lat, lng) {
     const context = {
-        depthMeters: null,
         elevationMeters: null,
         waveHeightMeters: null,
         wavePeriodSeconds: null,
@@ -907,12 +904,6 @@ async function resolveOceanContext(lat, lng) {
         }
         if (Number.isFinite(elevation)) {
             context.elevationMeters = elevation;
-            if (elevation < -0.5) {
-                const depth = Math.abs(elevation);
-                context.depthMeters = depth >= MIN_MARINE_DEPTH_METERS ? depth : null;
-            } else {
-                context.depthMeters = null;
-            }
             context.source.push("GEBCO 2020 via OpenTopoData");
         }
     } catch (error) {
@@ -1300,24 +1291,17 @@ function buildFootprints(impact, casualties, infrastructure, tsunami) {
 }
 
 function computeTsunamiImpact({ impact, oceanContext, populationInfo, explicitPopulation }) {
-    const depthMeters = Number(oceanContext?.depthMeters);
-    if (!Number.isFinite(depthMeters) || depthMeters <= MIN_MARINE_DEPTH_METERS) {
-        return null;
-    }
-
-    const craterRadiusKm = (impact.finalCraterDiameter / 2) / 1000;
-    const depthKm = depthMeters / 1000;
+    const craterRadiusKm = impact.finalCraterDiameter / 2 / 1000;
     const energyMt = Math.max(impact.energyMt, 1);
     const energyFactor = Math.pow(energyMt, 0.28);
-    const depthFactor = Math.max(Math.sqrt(depthKm + 0.05), 0.35);
-    const sourceWaveHeight = Math.min(energyFactor * 6 / depthFactor, craterRadiusKm * 800) ;
+    const sourceWaveHeight = Math.min(energyFactor * 6, craterRadiusKm * 800);
     const travelDistanceKm = Math.max(populationInfo.radiusKm || 60, craterRadiusKm * 2 + 30);
     const coastalWaveHeight = sourceWaveHeight * Math.pow(craterRadiusKm / Math.max(travelDistanceKm, craterRadiusKm + 1), 1.1);
     const runupHeight = coastalWaveHeight * 1.35;
-    const inundationDistanceKm = Math.max(runupHeight / 3, 1) + (coastalWaveHeight / 5);
+    const inundationDistanceKm = Math.max(runupHeight / 3, 1) + coastalWaveHeight / 5;
 
     const gravity = 9.81;
-    const waveSpeed = Math.sqrt(gravity * Math.max(depthMeters, 10));
+    const waveSpeed = Math.sqrt(gravity * 50);
     const arrivalTimeMinutes = (travelDistanceKm * 1000) / waveSpeed / 60;
 
     const density = Math.max(populationInfo.density || 50, 1);
@@ -1335,7 +1319,6 @@ function computeTsunamiImpact({ impact, oceanContext, populationInfo, explicitPo
         arrivalTimeMinutes,
         exposedPopulation,
         fatalities,
-        depthMeters,
         wavePeriodSeconds: oceanContext?.wavePeriodSeconds ?? null,
         surfaceTemperatureC: oceanContext?.surfaceTemperatureC ?? null,
         waveHeightMeters: oceanContext?.waveHeightMeters ?? null,
