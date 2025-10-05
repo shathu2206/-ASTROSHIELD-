@@ -134,7 +134,7 @@ const SIZE_REFERENCES = [
     { size: 77000, label: "the width of Rhode Island (~77 km)" }
 ];
 
-const MIN_MARINE_DEPTH_METERS = 5;
+const MIN_MARINE_DEPTH_METERS = 0;
 
 function toFiniteNumber(value) {
     const numeric = Number(value);
