@@ -650,10 +650,7 @@ function buildOceanDetails(ocean, geology) {
     if (oceanDepth !== null && oceanDepth >= MIN_MARINE_DEPTH_METERS) {
         const depthLabel = `${Math.round(oceanDepth)} m below mean sea level`;
         details.push(`Depth: ${escapeHtml(depthLabel)}`);
-    } else if (oceanDepth !== null && oceanDepth < 0) {
-        const depthLabel = `${Math.abs(Math.round(oceanDepth))} m above mean sea level`;
-        details.push(`Depth: ${escapeHtml(depthLabel)}`);
-    } else {
+    }  else {
         details.push("Depth: unknown");
     }
     if (Number.isFinite(ocean.waveHeightMeters)) {
