@@ -13,7 +13,7 @@ function isLocalhost(hostname) {
 
 export const isStaticMode = !isLocalhost(window.location.hostname);
 
-const NASA_API_KEY = (window?.ASTEROID_LAB_NASA_KEY || "DEMO_KEY").trim() || "DEMO_KEY";
+const NASA_API_KEY = (window?.ASTEROID_LAB_NASA_KEY || "etK3avvTPegVKnQGTsWoaUG0QDYJJYfu3Ns7Hi3p").trim() || "etK3avvTPegVKnQGTsWoaUG0QDYJJYfu3Ns7Hi3p";
 const MS_PER_DAY = 86_400_000;
 
 /**
