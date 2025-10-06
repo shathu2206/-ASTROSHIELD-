@@ -1,3 +1,5 @@
+// Frontend controller handling Leaflet map interactions, user input, and
+// presentation of simulation results in the browser UI.
 import { fetchApiJson, isStaticMode } from "./static-api.js";
 
 const mapContainer = document.getElementById("map");
@@ -135,6 +137,9 @@ const SIZE_REFERENCES = [
 ];
 
 
+/**
+ * Converts a value to a finite number or returns null when unavailable.
+ */
 function toFiniteNumber(value) {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : null;
@@ -166,6 +171,9 @@ let selectedLocation = null;
 let populationAbortController = null;
 let mapStatusTimer = null;
 
+/**
+ * Removes redundant timezone text from location labels.
+ */
 function stripTimeZoneLabel(text) {
     if (typeof text !== "string") {
         return text;
@@ -173,6 +181,9 @@ function stripTimeZoneLabel(text) {
     return text.replace(/\s*\|\s*time zone.*$/i, "").trim();
 }
 
+/**
+ * Computes the offset in minutes for a given time zone.
+ */
 function getTimezoneOffsetMinutes(timeZone, date = new Date()) {
     try {
         const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
@@ -183,6 +194,9 @@ function getTimezoneOffsetMinutes(timeZone, date = new Date()) {
     }
 }
 
+/**
+ * Builds a display label for a resolved time zone.
+ */
 function formatTimezoneLabel(timeZone) {
     if (typeof timeZone !== "string" || !timeZone.trim()) {
         return null;
@@ -227,6 +241,9 @@ function formatTimezoneLabel(timeZone) {
     }
 }
 
+/**
+ * Formats land highlights.
+ */
 function formatLandHighlights(highlights, timeZone) {
     if (!Array.isArray(highlights)) {
         return [];
@@ -250,6 +267,9 @@ function formatLandHighlights(highlights, timeZone) {
         .filter((item) => typeof item === "string" && item.length > 0);
 }
 
+/**
+ * Formats coordinate.
+ */
 function formatCoordinate(lat, lng) {
     const degreeSymbol = "\u00B0";
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -258,6 +278,9 @@ function formatCoordinate(lat, lng) {
     return `${lat.toFixed(5)}${degreeSymbol}, ${lng.toFixed(5)}${degreeSymbol}`;
 }
 
+/**
+ * Updates map status.
+ */
 function updateMapStatus(message, { sticky = false } = {}) {
     if (!mapStatusEl) return;
     if (mapStatusTimer) {
@@ -277,6 +300,9 @@ function updateMapStatus(message, { sticky = false } = {}) {
     }
 }
 
+/**
+ * Init map.
+ */
 function initMap() {
     if (!mapContainer) return;
 
@@ -330,6 +356,9 @@ function initMap() {
     });
 }
 
+/**
+ * Place impact marker.
+ */
 function placeImpactMarker(lat, lng, label) {
     if (!map) return;
     if (!impactMarker) {
@@ -347,6 +376,9 @@ function placeImpactMarker(lat, lng, label) {
     resetResultDisplay();
 }
 
+/**
+ * Sets impact location.
+ */
 function setImpactLocation(lat, lng, description) {
     const coordinateLabel = formatCoordinate(lat, lng);
     if (centerCoordinatesEl) {
@@ -362,6 +394,9 @@ function setImpactLocation(lat, lng, description) {
     applyGeologyToUI(null, { openPopup: false });
 }
 
+/**
+ * Loads population.
+ */
 async function loadPopulation() {
     if (!selectedLocation) return;
     if (populationAbortController) {
@@ -396,6 +431,9 @@ async function loadPopulation() {
     }
 }
 
+/**
+ * Renders population.
+ */
 function renderPopulation(data) {
     if (!populationSummary) return;
     if (data?.population) {
@@ -427,6 +465,9 @@ function renderPopulation(data) {
     }
 }
 
+/**
+ * Loads geology.
+ */
 async function loadGeology() {
     if (!selectedLocation || !impactMarker) return;
     try {
@@ -444,10 +485,16 @@ async function loadGeology() {
     }
 }
 
+/**
+ * Normalizes descriptor.
+ */
 function normalizeDescriptor(value) {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
+/**
+ * Classify surface context.
+ */
 function classifySurfaceContext(geology) {
     if (!geology) {
         return { kind: "unknown", marineScore: 0, landScore: 0 };
@@ -585,6 +632,9 @@ function classifySurfaceContext(geology) {
     return { kind, marineScore, landScore };
 }
 
+/**
+ * Builds land details.
+ */
 function buildLandDetails(geology) {
     if (!geology) {
         return [];
@@ -625,6 +675,9 @@ function buildLandDetails(geology) {
     return details;
 }
 
+/**
+ * Builds ocean details.
+ */
 function buildOceanDetails(ocean, geology) {
     if (!ocean) {
         return [];
@@ -647,6 +700,9 @@ function buildOceanDetails(ocean, geology) {
     return details;
 }
 
+/**
+ * Builds land environment segments.
+ */
 function buildLandEnvironmentSegments(geology) {
     const segments = [];
     if (geology?.surfaceType) {
@@ -662,6 +718,9 @@ function buildLandEnvironmentSegments(geology) {
     return segments;
 }
 
+/**
+ * Builds geology popup.
+ */
 function buildGeologyPopup(geology) {
     if (!geology) {
         return "<strong>Location selected</strong><br>No surface data available.";
@@ -686,6 +745,9 @@ function buildGeologyPopup(geology) {
     return parts.join("<br>");
 }
 
+/**
+ * Apply geology to ui.
+ */
 function applyGeologyToUI(geology, { openPopup = false } = {}) {
     latestGeology = geology || null;
     const fallbackLabel = selectedLocation?.description || DEFAULT_COORDINATE_LABEL;
@@ -736,6 +798,9 @@ function applyGeologyToUI(geology, { openPopup = false } = {}) {
     }
 }
 
+/**
+ * Escape html.
+ */
 function escapeHtml(value) {
     const map = {
         "&": "&amp;",
@@ -747,6 +812,9 @@ function escapeHtml(value) {
     return (value ?? "").toString().replace(/[&<>"']/g, (char) => map[char] || char);
 }
 
+/**
+ * Clears result readouts.
+ */
 function clearResultReadouts() {
     RESULT_FIELDS.forEach((field) => {
         if (field) {
@@ -755,18 +823,27 @@ function clearResultReadouts() {
     });
 }
 
+/**
+ * Hide results card.
+ */
 function hideResultsCard() {
     if (resultsCard) {
         resultsCard.classList.add("results-card--pending");
     }
 }
 
+/**
+ * Show results card.
+ */
 function showResultsCard() {
     if (resultsCard) {
         resultsCard.classList.remove("results-card--pending");
     }
 }
 
+/**
+ * Resets result display.
+ */
 function resetResultDisplay() {
     hideResultsCard();
     clearResultReadouts();
@@ -775,6 +852,9 @@ function resetResultDisplay() {
     }
 }
 
+/**
+ * Resets simulation.
+ */
 function resetSimulation() {
     if (populationAbortController) {
         populationAbortController.abort();
@@ -817,11 +897,17 @@ function resetSimulation() {
     updateMapStatus("Inputs reset. Drop a new impact pin.");
 }
 
+/**
+ * Removes any existing impact footprint overlays from the map.
+ */
 function clearFootprints() {
     if (!footprintLayer) return;
     footprintLayer.clearLayers();
 }
 
+/**
+ * Formats footprint stat value.
+ */
 function formatFootprintStatValue(stat) {
     if (!stat) return "--";
     const kind = stat.kind || "number";
@@ -851,6 +937,9 @@ function formatFootprintStatValue(stat) {
     }
 }
 
+/**
+ * Builds footprint tooltip.
+ */
 function buildFootprintTooltip(footprint) {
     const rawTitle = footprint?.title ?? footprint?.label ?? footprint?.type ?? "Impact zone";
     const rawSubtitle = footprint?.label && footprint.label !== rawTitle ? footprint.label : null;
@@ -869,6 +958,9 @@ function buildFootprintTooltip(footprint) {
     return `<div class="footprint-tooltip__inner"><div class="tooltip-heading"><span class="tooltip-title">${escapeHtml(rawTitle)}</span>${subtitle}</div>${description}${statsList}</div>`;
 }
 
+/**
+ * Create footprint polygon.
+ */
 function createFootprintPolygon(center, outerRadius, innerRadius, styleOptions = {}) {
     const [rawLat, rawLng] = center || [];
     const safeLat = Number(rawLat);
@@ -921,6 +1013,9 @@ function createFootprintPolygon(center, outerRadius, innerRadius, styleOptions =
     }
 }
 
+/**
+ * Draws impact footprint overlays on the map.
+ */
 function updateFootprints(footprints = [], location) {
     clearFootprints();
     if (!footprintLayer || !location) return;
@@ -980,6 +1075,9 @@ function updateFootprints(footprints = [], location) {
     });
 }
 
+/**
+ * Submits the simulation request and renders results.
+ */
 async function runSimulation() {
     if (!selectedLocation) {
         if (summaryText) {
@@ -1021,6 +1119,9 @@ async function runSimulation() {
     }
 }
 
+/**
+ * Renders results.
+ */
 function renderResults(data) {
     const {
         summary,
@@ -1095,6 +1196,9 @@ function renderResults(data) {
     showResultsCard();
 }
 
+/**
+ * Resets asteroid results.
+ */
 function resetAsteroidResults() {
     latestAsteroids = [];
     if (asteroidResultsList) {
@@ -1102,6 +1206,9 @@ function resetAsteroidResults() {
     }
 }
 
+/**
+ * Updates the summary display for the selected asteroid.
+ */
 function updateAsteroidSummary(payload) {
     if (!asteroidResultsSummary) return;
     const totalItems = Number(payload?.totalItems ?? asteroidSearchState.totalItems ?? latestAsteroids.length);
@@ -1175,6 +1282,9 @@ function updateAsteroidSummary(payload) {
     asteroidResultsSummary.textContent = highlights.join(" • ");
 }
 
+/**
+ * Renders asteroid search results into the UI list.
+ */
 function renderAsteroidResults() {
     if (!asteroidResultsList) return;
     asteroidResultsList.innerHTML = "";
@@ -1292,6 +1402,9 @@ function renderAsteroidResults() {
     asteroidResultsList.appendChild(fragment);
 }
 
+/**
+ * Apply asteroid preset from data.
+ */
 function applyAsteroidPresetFromData(asteroid) {
     if (!asteroid) return;
     selectedAsteroidId = asteroid.id ?? asteroid.name ?? null;
@@ -1348,6 +1461,9 @@ function applyAsteroidPresetFromData(asteroid) {
     renderAsteroidResults();
 }
 
+/**
+ * Read asteroid search form.
+ */
 function readAsteroidSearchForm() {
     asteroidSearchState.query = asteroidQueryInput?.value.trim() ?? "";
     asteroidSearchState.startDate = sanitizeDateInput(asteroidStartDateInput?.value ?? "");
@@ -1361,18 +1477,27 @@ function readAsteroidSearchForm() {
     asteroidSearchState.totalItems = 0;
 }
 
+/**
+ * Read number from input.
+ */
 function readNumberFromInput(input) {
     if (!input) return null;
     const value = Number(input.value);
     return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+/**
+ * Sanitize date input.
+ */
 function sanitizeDateInput(value) {
     if (!value) return "";
     const trimmed = String(value).trim();
     return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : "";
 }
 
+/**
+ * Formats date for input.
+ */
 function formatDateForInput(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
         return "";
@@ -1382,6 +1507,9 @@ function formatDateForInput(date) {
     return `${date.getUTCFullYear()}-${month}-${day}`;
 }
 
+/**
+ * Compute default asteroid date range.
+ */
 function computeDefaultAsteroidDateRange() {
     const start = new Date();
     start.setUTCHours(0, 0, 0, 0);
@@ -1392,6 +1520,9 @@ function computeDefaultAsteroidDateRange() {
     };
 }
 
+/**
+ * Try extract message from json.
+ */
 function tryExtractMessageFromJson(text) {
     if (!text) return "";
     const jsonStart = text.indexOf("{");
@@ -1414,6 +1545,9 @@ function tryExtractMessageFromJson(text) {
     return "";
 }
 
+/**
+ * Normalizes fallback reason.
+ */
 function normalizeFallbackReason(value) {
     if (value == null) return "";
     const text = String(value).trim();
@@ -1429,6 +1563,9 @@ function normalizeFallbackReason(value) {
         .trim();
 }
 
+/**
+ * Extract fallback reason from summary.
+ */
 function extractFallbackReasonFromSummary(summary) {
     if (typeof summary !== "string") {
         return "";
@@ -1445,6 +1582,9 @@ function extractFallbackReasonFromSummary(summary) {
     return reason.replace(/[.\s]+$/, "").trim();
 }
 
+/**
+ * Extract fallback reason.
+ */
 function extractFallbackReason(payload) {
     if (!payload) return "";
     const candidates = [payload.fallbackReason, payload.error].map(normalizeFallbackReason);
@@ -1457,6 +1597,9 @@ function extractFallbackReason(payload) {
     return summaryReason ? normalizeFallbackReason(summaryReason) : "";
 }
 
+/**
+ * Builds asteroid meta message.
+ */
 function buildAsteroidMetaMessage(payload) {
     const defaultMessage =
         DEFAULT_ASTEROID_META ||
@@ -1471,6 +1614,9 @@ function buildAsteroidMetaMessage(payload) {
     return "NASA's live feed is unavailable right now, so we're showing the bundled asteroid presets.";
 }
 
+/**
+ * Enforce asteroid date bounds.
+ */
 function enforceAsteroidDateBounds() {
     if (!asteroidStartDateInput || !asteroidEndDateInput) return;
     const startValue = sanitizeDateInput(asteroidStartDateInput.value);
@@ -1496,6 +1642,9 @@ function enforceAsteroidDateBounds() {
     }
 }
 
+/**
+ * Checks whether using default asteroid range.
+ */
 function isUsingDefaultAsteroidRange() {
     if (!defaultAsteroidDateRange) {
         return false;
@@ -1506,6 +1655,9 @@ function isUsingDefaultAsteroidRange() {
     );
 }
 
+/**
+ * Fetches offline asteroid catalog.
+ */
 async function fetchOfflineAsteroidCatalog() {
     try {
         const payload = await fetchApiJson("/api/asteroids/offline");
@@ -1523,6 +1675,9 @@ async function fetchOfflineAsteroidCatalog() {
     }
 }
 
+/**
+ * Fetches asteroid catalog.
+ */
 async function fetchAsteroidCatalog({ append = false } = {}) {
     if (asteroidSearchState.loading) return;
 
@@ -1654,6 +1809,9 @@ async function fetchAsteroidCatalog({ append = false } = {}) {
     }
 }
 
+/**
+ * Resets asteroid search filters and reloads defaults.
+ */
 function resetAsteroidSearch() {
     if (asteroidQueryInput) asteroidQueryInput.value = "";
     defaultAsteroidDateRange = computeDefaultAsteroidDateRange();
@@ -1693,6 +1851,9 @@ function resetAsteroidSearch() {
     }
 }
 
+/**
+ * Initialize asteroid catalog.
+ */
 function initializeAsteroidCatalog() {
     resetAsteroidSearch();
     if (isStaticMode && asteroidMeta) {
@@ -1701,6 +1862,9 @@ function initializeAsteroidCatalog() {
     }
 }
 
+/**
+ * Geocode.
+ */
 async function geocode(query) {
     if (!query) return;
     try {
@@ -1722,6 +1886,9 @@ async function geocode(query) {
     }
 }
 
+/**
+ * Formats a distance measurement for human-readable output.
+ */
 function formatDistance(meters) {
     const value = Number(meters);
     if (!Number.isFinite(value) || value <= 0) {
@@ -1737,6 +1904,9 @@ function formatDistance(meters) {
     return `${km.toFixed(0)} km`;
 }
 
+/**
+ * Formats people.
+ */
 function formatPeople(value) {
     const number = Number(value);
     if (!Number.isFinite(number) || number <= 0) {
@@ -1749,6 +1919,9 @@ function formatPeople(value) {
     return formatter.format(Math.round(number));
 }
 
+/**
+ * Formats magnitude.
+ */
 function formatMagnitude(value) {
     const number = Number(value);
     if (!Number.isFinite(number) || number <= 0) {
@@ -1757,6 +1930,9 @@ function formatMagnitude(value) {
     return number.toFixed(1);
 }
 
+/**
+ * Formats wind.
+ */
 function formatWind(ms) {
     const speed = Number(ms);
     if (!Number.isFinite(speed) || speed <= 0) {
@@ -1769,6 +1945,9 @@ function formatWind(ms) {
     return `${(mph / 1000).toFixed(2)}k mph`;
 }
 
+/**
+ * Formats currency.
+ */
 function formatCurrency(value) {
     const number = Number(value);
     if (!Number.isFinite(number) || number <= 0) {
@@ -1783,6 +1962,9 @@ function formatCurrency(value) {
     return formatter.format(number);
 }
 
+/**
+ * Formats height.
+ */
 function formatHeight(value) {
     const number = Number(value);
     if (!Number.isFinite(number) || number <= 0) {
@@ -1797,6 +1979,9 @@ function formatHeight(value) {
     return `${(number / 1000).toFixed(2)} km`;
 }
 
+/**
+ * Formats duration minutes.
+ */
 function formatDurationMinutes(minutes) {
     const number = Number(minutes);
     if (!Number.isFinite(number) || number <= 0) {
@@ -1813,6 +1998,9 @@ function formatDurationMinutes(minutes) {
     return `${hours} h ${Math.round(remaining)} min`;
 }
 
+/**
+ * Formats energy.
+ */
 function formatEnergy(value) {
     const number = Number(value);
     if (!Number.isFinite(number) || number <= 0) {
@@ -1827,6 +2015,9 @@ function formatEnergy(value) {
     return `${kilotons.toFixed(kilotons >= 10 ? 0 : 1)} kt TNT`;
 }
 
+/**
+ * Formats diameter label.
+ */
 function formatDiameterLabel(diameter) {
     if (!Number.isFinite(diameter) || diameter <= 0) {
         return null;
@@ -1839,10 +2030,16 @@ function formatDiameterLabel(diameter) {
     return `${Math.round(diameter)} m`;
 }
 
+/**
+ * Retrieves composition label.
+ */
 function getCompositionLabel(key) {
     return COMPOSITION_DISPLAY[key] ?? COMPOSITION_DISPLAY.unknown;
 }
 
+/**
+ * Formats asteroid diameter range.
+ */
 function formatAsteroidDiameterRange(asteroid) {
     if (!asteroid) return "Unknown size";
     const { diameterMin, diameterMax, diameter } = asteroid;
@@ -1860,6 +2057,9 @@ function formatAsteroidDiameterRange(asteroid) {
     return "Unknown size";
 }
 
+/**
+ * Formats asteroid velocity.
+ */
 function formatAsteroidVelocity(velocity) {
     const value = Number(velocity);
     if (!Number.isFinite(value) || value <= 0) {
@@ -1868,6 +2068,9 @@ function formatAsteroidVelocity(velocity) {
     return `${value.toFixed(1)} km/s`;
 }
 
+/**
+ * Formats asteroid miss distance.
+ */
 function formatAsteroidMissDistance(asteroid) {
     if (!asteroid) return null;
     const km = toFiniteNumber(asteroid?.approachMissDistanceKm);
@@ -1895,6 +2098,9 @@ function formatAsteroidMissDistance(asteroid) {
     return distanceText;
 }
 
+/**
+ * Formats asteroid date range label.
+ */
 function formatAsteroidDateRangeLabel(start, end) {
     if (!start) {
         return null;
@@ -1917,6 +2123,9 @@ function formatAsteroidDateRangeLabel(start, end) {
     }
 }
 
+/**
+ * Formats approach date.
+ */
 function formatApproachDate(date) {
     if (!date) {
         return "No recent approach";
@@ -1932,6 +2141,9 @@ function formatApproachDate(date) {
     }
 }
 
+/**
+ * Formats asteroid approach summary.
+ */
 function formatAsteroidApproachSummary(asteroid) {
     if (!asteroid) {
         return "Approach data unavailable";
@@ -1966,6 +2178,9 @@ function formatAsteroidApproachSummary(asteroid) {
     return parts.join(" • ") || "Approach data unavailable";
 }
 
+/**
+ * Describe asteroid size.
+ */
 function describeAsteroidSize(diameter) {
     if (!Number.isFinite(diameter) || diameter <= 0) {
         return "Set a positive diameter to compare with familiar objects.";
@@ -1996,6 +2211,9 @@ function describeAsteroidSize(diameter) {
         : `approx. ${descriptor}.`;
 }
 
+/**
+ * Updates the size comparison helper text for the current asteroid.
+ */
 function updateSizeComparison() {
     if (!sizeComparisonEl || !diameterInput) return;
     const diameter = Number(diameterInput.value);

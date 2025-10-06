@@ -1,4 +1,5 @@
-﻿:root {
+﻿/* Global design tokens and layout rules for the Asteroid Impact Lab UI. */
+:root {
     font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
     color-scheme: dark light;
     --bg: #05060f;
@@ -761,7 +762,4 @@ strong {
         font-size: 0.75rem;
     }
 }
-
-/* Orbit page specific tweaks */
-.orbit-canvas-wrap canvas { width:100% !important; height:100% !important; display:block; }
 

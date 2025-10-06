@@ -1,5 +1,10 @@
+// Utility helpers that unify API access between the static GitHub Pages build
+// and the Express-powered local development server.
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
+/**
+ * Checks whether a hostname refers to localhost for mode detection.
+ */
 function isLocalhost(hostname) {
     if (!hostname) return false;
     if (LOCAL_HOSTNAMES.has(hostname)) return true;
@@ -11,6 +16,9 @@ export const isStaticMode = !isLocalhost(window.location.hostname);
 const NASA_API_KEY = (window?.ASTEROID_LAB_NASA_KEY || "DEMO_KEY").trim() || "DEMO_KEY";
 const MS_PER_DAY = 86_400_000;
 
+/**
+ * Collects descriptive strings from reverse geocoding data.
+ */
 function collectReverseDescriptors(reverse) {
     const descriptors = [];
     const add = (value) => {
@@ -42,6 +50,9 @@ function collectReverseDescriptors(reverse) {
     return descriptors;
 }
 
+/**
+ * Determines whether the impact point is over water and labels it.
+ */
 function detectWaterContext(reverse) {
     const descriptors = collectReverseDescriptors(reverse);
     const marineRegex = /\b(ocean|sea|gulf|bay|strait|channel|sound|trench|deep|basin|abyss|current)\b/i;
@@ -105,15 +116,24 @@ const COMPOSITION_DENSITY = {
     unknown: 3200
 };
 
+/**
+ * Restricts a numeric value to a minimum/maximum range.
+ */
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
 }
 
+/**
+ * Converts the provided value into a finite number when possible.
+ */
 function toNumber(value) {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : null;
 }
 
+/**
+ * Creates a single AbortSignal that mirrors the first input signal to abort.
+ */
 function combineAbortSignals(signals) {
     const validSignals = signals.filter(Boolean);
     if (validSignals.length === 0) {
@@ -150,6 +170,9 @@ function combineAbortSignals(signals) {
     return controller.signal;
 }
 
+/**
+ * Pulls a human-readable message out of a NASA API error payload.
+ */
 function extractNasaErrorMessage(error) {
     if (!error) return null;
     const rawMessage =
@@ -214,6 +237,9 @@ function extractNasaErrorMessage(error) {
     return withoutPrefix || null;
 }
 
+/**
+ * Fetches external json.
+ */
 async function fetchExternalJson(url, { timeoutMs = 12000, signal, headers = {} } = {}) {
     const controller = new AbortController();
     const combinedSignal = combineAbortSignals([controller.signal, signal]);
@@ -230,6 +256,9 @@ async function fetchExternalJson(url, { timeoutMs = 12000, signal, headers = {} 
     }
 }
 
+/**
+ * Calculates the great-circle distance between two coordinate pairs.
+ */
 function haversineDistance([lat1, lon1], [lat2, lon2]) {
     const R = 6371;
     const toRad = (deg) => (deg * Math.PI) / 180;
@@ -240,6 +269,9 @@ function haversineDistance([lat1, lon1], [lat2, lon2]) {
     return R * c;
 }
 
+/**
+ * Resolves population.
+ */
 async function resolvePopulation(lat, lng, { signal } = {}) {
     try {
         const reverseUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`;
@@ -293,6 +325,9 @@ async function resolvePopulation(lat, lng, { signal } = {}) {
     }
 }
 
+/**
+ * Infers the likely surface composition at an impact location.
+ */
 function inferSurfaceType({ reverse, elevation, landcover, lat }) {
     if (reverse?.isOcean) {
         return reverse.ocean ? `Open ocean (${reverse.ocean})` : "Open ocean";
@@ -335,6 +370,9 @@ function inferSurfaceType({ reverse, elevation, landcover, lat }) {
     return "Continental landmass";
 }
 
+/**
+ * Creates a fallback reverse geocoding payload when lookups fail.
+ */
 function buildFallbackReverse(lat, lng, error) {
     const latHemisphere = lat >= 0 ? "N" : "S";
     const lngHemisphere = lng >= 0 ? "E" : "W";
@@ -353,6 +391,9 @@ function buildFallbackReverse(lat, lng, error) {
     };
 }
 
+/**
+ * Resolves ocean context.
+ */
 async function resolveOceanContext(lat, lng, { signal } = {}) {
     const context = {
         elevationMeters: null,
@@ -414,6 +455,9 @@ async function resolveOceanContext(lat, lng, { signal } = {}) {
     return context;
 }
 
+/**
+ * Resolves geology.
+ */
 async function resolveGeology(lat, lng, { signal } = {}) {
     const reverseUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`;
     let reverse = buildFallbackReverse(lat, lng);
@@ -511,6 +555,9 @@ async function resolveGeology(lat, lng, { signal } = {}) {
     };
 }
 
+/**
+ * Compute impact.
+ */
 function computeImpact({ diameter, velocity, angleDeg, density, terrainKey }) {
     const terrain = TERRAIN[terrainKey] ?? TERRAIN.land;
     const targetDensity = terrain.density;
@@ -558,6 +605,9 @@ function computeImpact({ diameter, velocity, angleDeg, density, terrainKey }) {
     };
 }
 
+/**
+ * Estimates casualties.
+ */
 function estimateCasualties(impact, populationInfo, populationOverride) {
     const areaFromRadius = (radius) => {
         const value = Number(radius);
@@ -607,6 +657,9 @@ function estimateCasualties(impact, populationInfo, populationOverride) {
     return casualties;
 }
 
+/**
+ * Estimates economic loss from the casualty projection.
+ */
 function estimateEconomicLoss(casualties, populationInfo, impact) {
     const totalFatalities = Object.values(casualties).reduce((sum, entry) => sum + (entry?.fatalities || 0), 0);
     const densityFactor = Math.max(populationInfo.density / 100, 0.2);
@@ -614,6 +667,9 @@ function estimateEconomicLoss(casualties, populationInfo, impact) {
     return totalFatalities * ECONOMIC_LOSS_PER_FATALITY * densityFactor * Math.log1p(infrastructureFactor);
 }
 
+/**
+ * Builds footprints.
+ */
 function buildFootprints(impact, casualties, infrastructure, tsunami) {
     const makeNumber = (value) => {
         const num = Number(value);
@@ -744,6 +800,9 @@ function buildFootprints(impact, casualties, infrastructure, tsunami) {
     }));
 }
 
+/**
+ * Compute tsunami impact.
+ */
 function computeTsunamiImpact({ impact, oceanContext, populationInfo, explicitPopulation }) {
     const craterRadiusKm = impact.finalCraterDiameter / 2 / 1000;
     const energyMt = Math.max(impact.energyMt, 1);
@@ -780,6 +839,9 @@ function computeTsunamiImpact({ impact, oceanContext, populationInfo, explicitPo
     };
 }
 
+/**
+ * Builds summary.
+ */
 function buildSummary(parameters, impact, location, populationInfo, tsunami) {
     const { diameter, velocity, angleDeg, density, terrainKey } = parameters;
     const terrain = TERRAIN[terrainKey] ?? TERRAIN.land;
@@ -798,6 +860,9 @@ function buildSummary(parameters, impact, location, populationInfo, tsunami) {
     return `A ${composition} asteroid ${diameter.toFixed(0)} meters across strikes ${terrain.label} ${placeText} at an angle of ${angleText} and ${velocity.toFixed(0)} km/s, releasing about ${energyText}. ${popText}${tsunamiText}`;
 }
 
+/**
+ * Creates a human-friendly alias from a raw asteroid name.
+ */
 function deriveFriendlyAlias(rawName) {
     if (!rawName) return null;
     const cleaned = String(rawName).replace(/[()]/g, "").trim();
@@ -812,6 +877,9 @@ function deriveFriendlyAlias(rawName) {
     return candidate;
 }
 
+/**
+ * Produces display, official, and alias names for an asteroid record.
+ */
 function resolveAsteroidNames(neo) {
     const rawName = String(neo?.name ?? "").trim();
     const designation = String(neo?.designation ?? neo?.neo_reference_id ?? "").trim();
@@ -825,6 +893,9 @@ function resolveAsteroidNames(neo) {
     };
 }
 
+/**
+ * Infers a likely asteroid composition from magnitude and orbit data.
+ */
 function estimateComposition(neo, diameterMeters) {
     const name = String(neo?.name ?? "").toLowerCase();
     if (/^(c|p)\//.test(name) || /comet/.test(name)) {
@@ -856,6 +927,9 @@ function estimateComposition(neo, diameterMeters) {
     return "stony";
 }
 
+/**
+ * Composition label.
+ */
 function compositionLabel(key) {
     switch (key) {
         case "iron":
@@ -871,6 +945,9 @@ function compositionLabel(key) {
     }
 }
 
+/**
+ * Creates a normalized asteroid record from a NASA NeoWs object.
+ */
 function buildAsteroidRecord(neo) {
     const { displayName, officialName, alias } = resolveAsteroidNames(neo);
     const diameter = neo?.estimated_diameter?.meters;
@@ -922,6 +999,9 @@ function buildAsteroidRecord(neo) {
     };
 }
 
+/**
+ * Creates a synthetic asteroid record when NASA data is unavailable.
+ */
 function buildFallbackAsteroidRecord(asteroid) {
     const alias = deriveFriendlyAlias(asteroid?.name ?? "");
     const displayName = alias ?? asteroid?.name ?? "Unknown object";
@@ -962,6 +1042,9 @@ function buildFallbackAsteroidRecord(asteroid) {
 
 let fallbackAsteroidsPromise = null;
 
+/**
+ * Loads fallback asteroids.
+ */
 async function loadFallbackAsteroids() {
     if (!fallbackAsteroidsPromise) {
         fallbackAsteroidsPromise = fetch("data/asteroids-fallback.json")
@@ -981,6 +1064,9 @@ async function loadFallbackAsteroids() {
     return raw.map((item) => buildFallbackAsteroidRecord(item));
 }
 
+/**
+ * Filters asteroid records according to the provided query parameters.
+ */
 function filterAsteroidRecords(records, { query, minDiameter, maxDiameter, compositions, hazardousOnly, startDate, endDate }) {
     const startTime = startDate instanceof Date ? startDate.getTime() : null;
     const endTime = endDate instanceof Date ? endDate.getTime() + MS_PER_DAY - 1 : null;
@@ -1031,6 +1117,9 @@ function filterAsteroidRecords(records, { query, minDiameter, maxDiameter, compo
     });
 }
 
+/**
+ * Loads a page of NeoWs browse catalog results from NASA.
+ */
 async function loadNasaCatalog({ page = 0, size = 25, signal } = {}) {
     const safePage = Number.isFinite(page) && page >= 0 ? Math.min(page, 2000) : 0;
     const safeSize = clamp(Number(size) || 25, 1, 100);
@@ -1051,6 +1140,9 @@ async function loadNasaCatalog({ page = 0, size = 25, signal } = {}) {
     return { records, pageInfo, hasMore, summary };
 }
 
+/**
+ * Loads NASA's daily NeoWs feed for a given date range.
+ */
 async function loadNasaFeed({ startDate, endDate, page = 0, size = 25, signal } = {}) {
     if (!startDate) {
         throw new Error("A start date is required to load the NASA feed");
@@ -1113,6 +1205,9 @@ async function loadNasaFeed({ startDate, endDate, page = 0, size = 25, signal } 
     };
 }
 
+/**
+ * Parse date param.
+ */
 function parseDateParam(value) {
     if (!value) return null;
     const trimmed = String(value).trim();
@@ -1126,11 +1221,17 @@ function parseDateParam(value) {
     return parsed;
 }
 
+/**
+ * Formats date param.
+ */
 function formatDateParam(date) {
     if (!(date instanceof Date)) return null;
     return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Resolves date range.
+ */
 function resolveDateRange(query) {
     const rawStart = query.startDate ?? query.start_date ?? query.get?.("startDate");
     const rawEnd = query.endDate ?? query.end_date ?? query.get?.("endDate");
@@ -1164,6 +1265,9 @@ function resolveDateRange(query) {
     };
 }
 
+/**
+ * Parse composition filters.
+ */
 function parseCompositionFilters(value) {
     if (value == null) return [];
     const items = Array.isArray(value) ? value : String(value).split(",");
@@ -1172,6 +1276,9 @@ function parseCompositionFilters(value) {
         .filter((item) => ["stony", "iron", "carbonaceous", "cometary", "unknown"].includes(item));
 }
 
+/**
+ * Geocode query.
+ */
 async function geocodeQuery(query, { signal } = {}) {
     const url = `https://geocode.maps.co/search?q=${encodeURIComponent(query)}`;
     const results = await fetchExternalJson(url, { signal });
@@ -1184,6 +1291,9 @@ async function geocodeQuery(query, { signal } = {}) {
         }));
 }
 
+/**
+ * Runs simulation static.
+ */
 async function runSimulationStatic(body, { signal } = {}) {
     if (!body?.location || !Number.isFinite(body.location.lat) || !Number.isFinite(body.location.lng)) {
         throw new Error("Missing or invalid impact location");
@@ -1245,6 +1355,9 @@ async function runSimulationStatic(body, { signal } = {}) {
     };
 }
 
+/**
+ * Parse body.
+ */
 function parseBody(options) {
     if (!options) return null;
     if (options.body == null) return null;
@@ -1262,6 +1375,9 @@ function parseBody(options) {
     return options.body;
 }
 
+/**
+ * Fetches fallback asteroids payload.
+ */
 async function fetchFallbackAsteroidsPayload() {
     const asteroids = await loadFallbackAsteroids();
     return {
@@ -1277,6 +1393,9 @@ async function fetchFallbackAsteroidsPayload() {
     };
 }
 
+/**
+ * Search asteroids static.
+ */
 async function searchAsteroidsStatic(url, { signal } = {}) {
     const queryParams = url.searchParams;
     const page = Number(queryParams.get("page")) || 0;

@@ -17,8 +17,6 @@ Interactive asteroid impact sandbox with live satellite map targeting, asteroid 
    ```bash
    echo NASA_API_KEY=YOUR_NASA_KEY_HERE > .env
    ```
-3. (Optional) Create a Python virtualenv if you intend to run auxiliary scripts.
-
 ## Run locally
 
 ```bash
