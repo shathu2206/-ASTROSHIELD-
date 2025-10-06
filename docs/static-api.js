@@ -1,5 +1,7 @@
 // Utility helpers that unify API access between the static GitHub Pages build
 // and the Express-powered local development server.
+import { NASA_API_KEY } from "./config.js";
+
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 /**
@@ -12,8 +14,6 @@ function isLocalhost(hostname) {
 }
 
 export const isStaticMode = !isLocalhost(window.location.hostname);
-
-const NASA_API_KEY = "etK3avvTPegVKnQGTsWoaUG0QDYJJYfu3Ns7Hi3p";
 const MS_PER_DAY = 86_400_000;
 
 /**

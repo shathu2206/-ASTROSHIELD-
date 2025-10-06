@@ -5,7 +5,7 @@ Interactive asteroid impact sandbox with live satellite map targeting, asteroid 
 ## Prerequisites
 
 - Node.js 18 or newer (includes `npm` and native `fetch`).
-- NASA API key (https://api.nasa.gov/) for higher rate limits.
+- NASA API key (https://api.nasa.gov/) for higher rate limits (configured in `docs/config.js`).
 
 ## Setup
 

@@ -6,12 +6,12 @@ import dotenv from "dotenv";
 import fetch from "node-fetch";
 import { execFile } from "node:child_process";
 import fallbackAsteroids from "./docs/data/asteroids-fallback.json" with { type: "json" };
+import { NASA_API_KEY } from "./docs/config.js";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const NASA_API_KEY = "etK3avvTPegVKnQGTsWoaUG0QDYJJYfu3Ns7Hi3p";
 const DEFAULT_USER_AGENT = "AsteroidImpactLab/1.0 (+https://example.com/contact)";
 const MS_PER_DAY = 86_400_000;
 
