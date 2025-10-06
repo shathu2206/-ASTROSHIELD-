@@ -13,10 +13,7 @@ Interactive asteroid impact sandbox with live satellite map targeting, asteroid 
    ```bash
    npm install
    ```
-2. Create a `.env` file with your NASA API key (recommended to avoid the demo rate limit):
-   ```bash
-   echo NASA_API_KEY=YOUR_NASA_KEY_HERE > .env
-   ```
+2. The NASA NeoWs key `etK3avvTPegVKnQGTsWoaUG0QDYJJYfu3Ns7Hi3p` is already bundled with the app, so no `.env` setup is required.
 ## Run locally
 
 ```bash
@@ -35,7 +32,7 @@ Running `npm start` locally restores the Express proxy, which keeps your NASA AP
 
 ### Environment variables
 
-- `NASA_API_KEY` – personal key from https://api.nasa.gov/. If omitted the app uses NASA's shared `DEMO_KEY`, which is heavily rate limited. When NASA returns an error (for example due to rate limits) the UI automatically falls back to the bundled offline dataset in `docs/data/asteroids-fallback.json`.
+- `PORT` – optional override for the Express server (defaults to `3000`). The NASA NeoWs key is bundled as `etK3avvTPegVKnQGTsWoaUG0QDYJJYfu3Ns7Hi3p`, so no environment configuration is needed for NASA access.
 
 If you're working inside VS Code:
 
@@ -56,7 +53,6 @@ Frontend requests should use these routes instead of calling NASA directly; they
 ### Troubleshooting the NASA feed
 
 - Confirm your development machine (or Codespace) can reach the public internet. If `http://localhost:3000` cannot open outbound HTTPS connections the server will switch to the offline asteroid catalog.
-- Provide a personal `NASA_API_KEY` in `.env` to avoid the shared demo key's strict rate limit.
 - When the app shows a "Mission Control" warning banner it is serving cached asteroid data and includes the specific error returned by NASA to help you diagnose connectivity or authentication issues.
 
 ## Features
@@ -82,14 +78,14 @@ The application only relies on publicly documented services—no stubbed or fabr
 | Marine conditions | Open-Meteo Marine | `https://marine-api.open-meteo.com/v1/marine` | None | Provides wave height, period, and sea-surface temperature for tsunami context. |
 | Geocoding search bar | maps.co (OpenStreetMap search) | `https://geocode.maps.co/search` | None | Powers the location search box in the UI. |
 | Asteroid presets | NASA Near-Earth Object Web Service | `https://api.nasa.gov/neo/rest/v1/neo/browse` | API key recommended | A NASA key dramatically raises rate limits; request one at [api.nasa.gov](https://api.nasa.gov/). |
-When NASA's key is omitted the server falls back to the documented `DEMO_KEY`, but heavy use will quickly exhaust the shared rate limit. Other services above are currently anonymous; still, keep total requests modest and cache results in production deployments.
+When NASA's key is omitted the server now falls back to the bundled key `etK3avvTPegVKnQGTsWoaUG0QDYJJYfu3Ns7Hi3p`, eliminating reliance on the public `DEMO_KEY`. Other services above are currently anonymous; still, keep total requests modest and cache results in production deployments.
 
 
 ## Notes
 - Esri World Imagery tiles power the satellite basemap; keep attribution visible and stay within their fair-use limits.
 - Marine context relies on OpenTopoData (GEBCO 2020 bathymetry) and Open-Meteo Marine wave forecasts; both are anonymous but rate limited.
 - Population requests rely on public APIs and may be rate limited. If the auto-population fails, provide a manual override in the "Nearby population" field.
-- NASA's demo API key is rate-limited; supply your own key through `.env` for higher limits.
+- NASA's demo API key is no longer used; the repository ships with the dedicated key `etK3avvTPegVKnQGTsWoaUG0QDYJJYfu3Ns7Hi3p` baked into both the server proxy and the static build.
 - All physics models are simplified heuristics intended for educational visualization, not precise scientific predictions.
 
 
@@ -116,6 +112,6 @@ When NASA's key is omitted the server falls back to the documented `DEMO_KEY`, b
 - **Open-Meteo Marine API** (`server.js`:176-195) - wave height, period, and sea surface temperature for ocean impacts. Free with rate limits. [Docs](https://open-meteo.com/en/docs/marine-api).
 - **OpenTopoData GEBCO 2020** (`server.js`:162-170) - bathymetry and elevation context. Free community service. [Docs](https://www.opentopodata.org/).
 - **Geocode.maps.co (Nominatim)** (`server.js`:574-583) - search bar geocoding results. Free, subject to fair-use limits. [Site](https://geocode.maps.co/).
-- **NASA NeoWs (Near Earth Object Web Service)** (`server.js`:617-635) - asteroid preset catalog. Free with API key (DEMO_KEY default). [Docs](https://api.nasa.gov/).
+- **NASA NeoWs (Near Earth Object Web Service)** (`server.js`:617-635) - asteroid preset catalog. Free with API key (defaults to `etK3avvTPegVKnQGTsWoaUG0QDYJJYfu3Ns7Hi3p`). [Docs](https://api.nasa.gov/).
 
 > Maintenance note: update these sections whenever physics models, heuristics, or external data sources change so the README stays authoritative.
